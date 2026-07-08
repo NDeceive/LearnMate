@@ -1,0 +1,20 @@
+{
+  "name": "edusmart-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "计智引擎 Node/Express/MySQL 后端基础骨架",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "seed:base-questions": "node scripts/seedBaseQuestionBank.js",
+    "import:open-questions": "node scripts/importOpenQuestionBank.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "mysql2": "^3.11.5",
+    "ws": "^8.18.0"
+  }
+}
