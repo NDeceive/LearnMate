@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { UserProfile, Course, WeakPoint } from "../types";
+import { AgentLogSummary, fetchApiData, KnowledgeMasteryRecord } from "../api";
 import {
   ResponsiveContainer,
   RadarChart,
@@ -36,13 +37,84 @@ interface AssessmentViewProps {
   onNavigateToTab: (tab: string, prefillData?: any) => void;
 }
 
+function clampScore(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function average(values: number[], fallback = 0) {
+  const validValues = values.filter((value) => Number.isFinite(value));
+  if (validValues.length === 0) return fallback;
+  return validValues.reduce((sum, value) => sum + value, 0) / validValues.length;
+}
+
 export default function AssessmentView({ profile, courses, weakPoints, onNavigateToTab }: AssessmentViewProps) {
-  // Chart 1: Course Mastery Radar Map
-  const radarData = courses.map((course) => ({
-    subject: course.name,
-    score: course.proficiency,
-    fullMark: 100
-  }));
+  const [masteryRecords, setMasteryRecords] = useState<KnowledgeMasteryRecord[]>([]);
+  const [apiWeakPoints, setApiWeakPoints] = useState<KnowledgeMasteryRecord[]>([]);
+  const [agentLogs, setAgentLogs] = useState<AgentLogSummary[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    Promise.allSettled([
+      fetchApiData<KnowledgeMasteryRecord>("/api/profile/knowledge-mastery"),
+      fetchApiData<KnowledgeMasteryRecord>("/api/profile/weak-points"),
+      fetchApiData<AgentLogSummary>("/api/agent-logs?limit=20")
+    ]).then(([masteryResult, weakResult, logsResult]) => {
+      if (cancelled) return;
+
+      setMasteryRecords(masteryResult.status === "fulfilled" ? masteryResult.value : []);
+      setApiWeakPoints(weakResult.status === "fulfilled" ? weakResult.value : []);
+      setAgentLogs(logsResult.status === "fulfilled" ? logsResult.value : []);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const abilityRadarData = useMemo(() => {
+    const fallbackMastery = courses.map((course) => course.proficiency);
+    const masteryValues = masteryRecords.length > 0
+      ? masteryRecords.map((item) => Number(item.mastery))
+      : fallbackMastery;
+    const wrongCount = apiWeakPoints.length > 0
+      ? apiWeakPoints.reduce((sum, item) => sum + Number(item.wrong_count || 0), 0)
+      : weakPoints.reduce((sum, item) => sum + item.count, 0);
+    const practiceCount = masteryRecords.length > 0
+      ? masteryRecords.reduce((sum, item) => sum + Number(item.practice_count || 0), 0)
+      : profile.testsTaken * 3;
+
+    const knowledgeMastery = clampScore(average(masteryValues, profile.knowledgeCoverage));
+    const wrongFix = clampScore(100 - wrongCount * 6 + knowledgeMastery * 0.12);
+    const learningStability = clampScore(48 + Math.min(practiceCount, 22) * 2 + Math.min(profile.streak, 20));
+    const aiParticipation = clampScore(45 + agentLogs.length * 4);
+    const questionAnalysis = clampScore(knowledgeMastery * 0.62 + wrongFix * 0.28 + learningStability * 0.1);
+    const codeUnderstanding = clampScore(knowledgeMastery * 0.58 + wrongFix * 0.22 + 18 - wrongCount * 0.8);
+
+    return [
+      { dimension: "知识掌握", score: knowledgeMastery, fullMark: 100 },
+      { dimension: "题目分析", score: questionAnalysis, fullMark: 100 },
+      { dimension: "代码理解", score: codeUnderstanding, fullMark: 100 },
+      { dimension: "错题修复", score: wrongFix, fullMark: 100 },
+      { dimension: "学习稳定性", score: learningStability, fullMark: 100 },
+      { dimension: "AI 辅导参与度", score: aiParticipation, fullMark: 100 }
+    ];
+  }, [agentLogs.length, apiWeakPoints, courses, masteryRecords, profile.knowledgeCoverage, profile.streak, profile.testsTaken, weakPoints]);
+
+  const learningSuggestions = useMemo(() => {
+    const sorted = [...abilityRadarData].sort((a, b) => a.score - b.score);
+    const suggestionMap: Record<string, string> = {
+      "知识掌握": "优先复盘掌握度低于 60% 的知识点，每次测验后立即补一轮概念卡片。",
+      "题目分析": "做题时先标出题干条件、边界值和隐含限制，再进入计算或代码推演。",
+      "代码理解": "把易错代码按变量生命周期画成执行表，重点跟踪指针、栈和循环出口。",
+      "错题修复": "把未掌握错题按错因分组，每组选择 1 道同源题做二次验证。",
+      "学习稳定性": "保持短周期练习节奏，建议每天完成 1 次 10 分钟专项测验。",
+      "AI 辅导参与度": "遇到薄弱知识点时直接发起 AI 问答，让 TheoryAgent 和 CodeAgent 拆解同一题。"
+    };
+
+    return sorted.slice(0, 3).map((item) => suggestionMap[item.dimension]);
+  }, [abilityRadarData]);
 
   // Chart 2: Monthly Learning Progress Trend
   const trendData = [
@@ -93,25 +165,34 @@ export default function AssessmentView({ profile, courses, weakPoints, onNavigat
           </div>
         </div>
 
-        {/* Dynamic analysis Radar and Line Charts */}
+        {/* Dynamic ability radar */}
         <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-100 p-6 shadow-sm flex flex-col justify-between">
           <div className="space-y-1">
             <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5 uppercase tracking-wider">
-              <TrendingUp className="w-4 h-4 text-blue-600" /> 专业知识雷达图 (Mastery Radar Map)
+              <TrendingUp className="w-4 h-4 text-blue-600" /> 学习画像能力雷达图
             </h3>
-            <p className="text-xs text-slate-400 font-medium">覆盖计算机统考五大核心科目，多级掌握度权重呈现。</p>
+            <p className="text-xs text-slate-400 font-medium">综合知识掌握、错题修复、练习稳定性和 AI 辅导参与度生成。</p>
           </div>
 
           <div className="h-64 w-full pt-4">
             <ResponsiveContainer width="100%" height="100%">
-              <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
+              <RadarChart cx="50%" cy="50%" outerRadius="78%" data={abilityRadarData}>
                 <PolarGrid stroke="#f1f5f9" />
-                <PolarAngleAxis dataKey="subject" tick={{ fill: "#64748b", fontSize: 10, fontWeight: 600 }} />
+                <PolarAngleAxis dataKey="dimension" tick={{ fill: "#64748b", fontSize: 10, fontWeight: 600 }} />
                 <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: "#cbd5e1", fontSize: 10 }} />
-                <Radar name="知识掌握度" dataKey="score" stroke="#4f46e5" fill="#4f46e5" fillOpacity={0.15} />
+                <Radar name="能力得分" dataKey="score" stroke="#2563eb" fill="#2563eb" fillOpacity={0.16} />
                 <Tooltip wrapperClassName="font-mono text-xs rounded-xl shadow-lg border-slate-100" />
               </RadarChart>
             </ResponsiveContainer>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-3 border-t border-slate-100 pt-4 mt-2">
+            {learningSuggestions.map((suggestion, index) => (
+              <div key={suggestion} className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-xs leading-relaxed text-slate-600 font-semibold">
+                <span className="block text-[10px] text-blue-600 font-extrabold mb-1">建议 {index + 1}</span>
+                {suggestion}
+              </div>
+            ))}
           </div>
         </div>
       </section>

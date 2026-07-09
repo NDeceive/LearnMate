@@ -22,9 +22,13 @@ import {
 interface QuizViewProps {
   onAddErrorRecord: (question: QuizQuestion, selectedIndex: number) => void;
   onNavigateToTab: (tab: string, prefillData?: any) => void;
+  prefill?: {
+    subject?: string;
+    knowledgePoint?: string;
+  } | null;
 }
 
-export default function QuizView({ onAddErrorRecord, onNavigateToTab }: QuizViewProps) {
+export default function QuizView({ onAddErrorRecord, onNavigateToTab, prefill }: QuizViewProps) {
   // Config
   const [settings, setSettings] = useState<QuizSettings>({
     domain: "数据结构与算法",
@@ -48,6 +52,15 @@ export default function QuizView({ onAddErrorRecord, onNavigateToTab }: QuizView
   const [showHint, setShowHint] = useState(false);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (!prefill?.subject) return;
+
+    setSettings((prev) => ({
+      ...prev,
+      domain: prefill.subject || prev.domain
+    }));
+  }, [prefill?.subject, prefill?.knowledgePoint]);
 
   // Start countdown
   useEffect(() => {
@@ -217,6 +230,14 @@ export default function QuizView({ onAddErrorRecord, onNavigateToTab }: QuizView
             <RefreshCw className="w-4 h-4 text-blue-600" /> 自适应测验配置
           </h3>
           <p className="text-xs text-slate-500">根据当前专业课复习大纲，由 QuizAgent 动态合成专项试卷。</p>
+
+          {prefill?.knowledgePoint && (
+            <div className="p-3 rounded-xl bg-rose-50/70 border border-rose-100 text-xs text-rose-900 leading-relaxed">
+              <span className="font-extrabold">知识图谱定向练习：</span>
+              {prefill.subject ? `【${prefill.subject}】` : ""}
+              {prefill.knowledgePoint}
+            </div>
+          )}
 
           <div className="space-y-4 pt-2">
             {/* Subject Domain Selection */}

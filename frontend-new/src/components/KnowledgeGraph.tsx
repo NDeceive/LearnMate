@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import { Course, WeakPoint } from "../types";
+import { fetchApiData, KnowledgeMasteryRecord } from "../api";
 import {
   TrendingUp,
   Brain,
@@ -41,6 +42,46 @@ interface GraphLink extends d3.SimulationLinkDatum<GraphNode> {
   depLabel?: string;
 }
 
+function normalizeMastery(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function getMasteryStatus(record: KnowledgeMasteryRecord) {
+  const practiceCount = Number(record.practice_count || 0);
+  const mastery = normalizeMastery(Number(record.mastery));
+
+  if (practiceCount <= 0) {
+    return {
+      label: "未训练",
+      color: "bg-slate-50 border-slate-200 text-slate-500",
+      bar: "bg-slate-300"
+    };
+  }
+
+  if (mastery >= 80) {
+    return {
+      label: "掌握较好",
+      color: "bg-emerald-50 border-emerald-200 text-emerald-800",
+      bar: "bg-emerald-500"
+    };
+  }
+
+  if (mastery >= 60) {
+    return {
+      label: "需要巩固",
+      color: "bg-amber-50 border-amber-200 text-amber-800",
+      bar: "bg-amber-500"
+    };
+  }
+
+  return {
+    label: "薄弱知识点",
+    color: "bg-rose-50 border-rose-200 text-rose-800",
+    bar: "bg-rose-500"
+  };
+}
+
 // Generate stable deterministic 7-day trend history data for each node
 const getSparklineData = (nodeId: string, currentProficiency: number) => {
   let hash = 0;
@@ -68,9 +109,36 @@ export default function KnowledgeGraph({ courses, weakPoints, onNavigateToTab }:
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [zoomTransform, setZoomTransform] = useState<d3.ZoomTransform | null>(null);
+  const [masteryRecords, setMasteryRecords] = useState<KnowledgeMasteryRecord[]>([]);
+  const [masteryApiLoaded, setMasteryApiLoaded] = useState(false);
 
   // Hardcode zoom controller ref
   const zoomBehaviorRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchApiData<KnowledgeMasteryRecord>("/api/profile/knowledge-mastery")
+      .then((data) => {
+        if (!cancelled) {
+          setMasteryRecords(data);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMasteryRecords([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setMasteryApiLoaded(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Construct Graph Nodes and Links dynamically
   const nodes: GraphNode[] = [
@@ -628,6 +696,31 @@ export default function KnowledgeGraph({ courses, weakPoints, onNavigateToTab }:
   };
 
   const aiRec = selectedNode ? getAIRecommendation(selectedNode) : null;
+  const fallbackMasteryRecords: KnowledgeMasteryRecord[] = [
+    ...weakPoints.map((wp) => ({
+      subject: wp.course,
+      knowledge_point: wp.name,
+      mastery: wp.remediationProgress,
+      wrong_count: wp.count,
+      practice_count: Math.max(wp.count + 1, 1)
+    })),
+    ...courses
+      .filter((course) => !weakPoints.some((wp) => wp.course === course.name))
+      .map((course) => ({
+        subject: course.name,
+        knowledge_point: `${course.name} 综合基础`,
+        mastery: course.proficiency,
+        wrong_count: Math.max(0, Math.round((100 - course.proficiency) / 18)),
+        practice_count: Math.max(1, Math.round(course.totalHours / 6))
+      }))
+  ];
+  const heatmapRecords = masteryRecords.length > 0 ? masteryRecords : fallbackMasteryRecords;
+  const groupedHeatmapRecords = heatmapRecords.reduce<Record<string, KnowledgeMasteryRecord[]>>((groups, record) => {
+    const subject = record.subject || "未分类课程";
+    groups[subject] = groups[subject] || [];
+    groups[subject].push(record);
+    return groups;
+  }, {});
 
   return (
     <div className="space-y-4">
@@ -941,6 +1034,102 @@ export default function KnowledgeGraph({ courses, weakPoints, onNavigateToTab }:
           )}
         </div>
       </div>
+
+      {/* Knowledge mastery heatmap */}
+      <section className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-4">
+          <div className="space-y-1">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+              <TrendingUp className="w-4 h-4 text-blue-600" /> 知识点掌握热力图
+            </h3>
+            <p className="text-xs text-slate-400">
+              按课程与知识点展示 mastery、wrong_count、practice_count，薄弱知识点可直接进入每日测验。
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2 text-[10px] font-bold text-slate-500">
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" />80-100 掌握较好</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" />60-79 需要巩固</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-500" />0-59 薄弱知识点</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-300" />无数据 未训练</span>
+          </div>
+        </div>
+
+        {heatmapRecords.length > 0 ? (
+          <div className="space-y-5">
+            {!masteryApiLoaded && (
+              <div className="text-xs text-slate-400">正在读取掌握度数据...</div>
+            )}
+
+            {Object.entries(groupedHeatmapRecords).map(([subject, records]) => (
+              <div key={subject} className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-extrabold text-slate-800">{subject}</h4>
+                  <span className="text-[10px] text-slate-400 font-bold">{records.length} 个知识点</span>
+                </div>
+
+                <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {records.map((record) => {
+                    const mastery = normalizeMastery(Number(record.mastery));
+                    const status = getMasteryStatus(record);
+                    const isWeak = Number(record.practice_count || 0) > 0 && mastery < 60;
+
+                    return (
+                      <div key={`${subject}-${record.knowledge_point}`} className={`rounded-xl border p-3 space-y-3 ${status.color}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <p className="text-xs font-extrabold leading-snug text-slate-900">{record.knowledge_point || "未命名知识点"}</p>
+                            <span className="inline-flex text-[9px] font-bold px-2 py-0.5 rounded-full bg-white/70 border border-white/70">
+                              {status.label}
+                            </span>
+                          </div>
+                          <span className="font-mono text-lg font-black">{Number(record.practice_count || 0) > 0 ? `${mastery}%` : "--"}</span>
+                        </div>
+
+                        <div className="h-1.5 rounded-full bg-white/70 overflow-hidden">
+                          <div className={`h-full rounded-full ${status.bar}`} style={{ width: `${Number(record.practice_count || 0) > 0 ? mastery : 12}%` }} />
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 text-[10px] font-bold text-slate-600">
+                          <div className="bg-white/60 rounded-lg px-2 py-1">
+                            <span className="block text-slate-400">mastery</span>
+                            {Number(record.practice_count || 0) > 0 ? mastery : "无数据"}
+                          </div>
+                          <div className="bg-white/60 rounded-lg px-2 py-1">
+                            <span className="block text-slate-400">wrong_count</span>
+                            {Number(record.wrong_count || 0)}
+                          </div>
+                          <div className="bg-white/60 rounded-lg px-2 py-1">
+                            <span className="block text-slate-400">practice_count</span>
+                            {Number(record.practice_count || 0)}
+                          </div>
+                        </div>
+
+                        {isWeak && (
+                          <button
+                            onClick={() => onNavigateToTab("quiz", {
+                              subject,
+                              knowledgePoint: record.knowledge_point
+                            })}
+                            className="w-full text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg py-2 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                          >
+                            去每日测验
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-10 text-center text-xs text-slate-400">
+            暂无知识点训练数据。
+          </div>
+        )}
+      </section>
     </div>
   );
 }

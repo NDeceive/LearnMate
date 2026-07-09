@@ -1,6 +1,16 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { ErrorRecord } from "../types";
+import { fetchApiData, WrongQuestionRecord } from "../api";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
+} from "recharts";
 import {
   ClipboardCopy,
   AlertTriangle,
@@ -57,6 +67,56 @@ export function autoClassifyRecord(rec: ErrorRecord): string[] {
   return Array.from(new Set(tags));
 }
 
+const ERROR_REASON_CATEGORIES = [
+  "概念混淆",
+  "审题错误",
+  "公式记忆错误",
+  "代码理解错误",
+  "复杂度分析错误",
+  "知识迁移不足",
+  "其他"
+];
+
+const ERROR_REASON_ADVICE: Record<string, string> = {
+  "概念混淆": "先把相似概念做成对照表，重点写清适用条件和反例。",
+  "审题错误": "读题时先圈出限制条件、问法和单位，再开始推导。",
+  "公式记忆错误": "把公式放回推导过程记忆，并用 2 道边界题检查是否会用。",
+  "代码理解错误": "逐行跟踪变量、指针和栈状态，用小样例模拟一次完整执行。",
+  "复杂度分析错误": "画出循环层级或递归树，明确输入规模 n 对应的对象。",
+  "知识迁移不足": "每个知识点补一道跨场景题，训练从原理到新题型的迁移。",
+  "其他": "回看解析后写一句自己的错因，再安排一次同类题复测。"
+};
+
+function classifyErrorReason(text: string) {
+  const normalized = text.toLowerCase();
+
+  if (/(概念|混淆|误认为|相似|定义|原理|条件|区别)/i.test(normalized)) {
+    return "概念混淆";
+  }
+
+  if (/(审题|题干|看错|漏看|问法|条件|边界|单位|限制)/i.test(normalized)) {
+    return "审题错误";
+  }
+
+  if (/(公式|记忆|背诵|临界|银行家|计算式|推导式|取值)/i.test(normalized)) {
+    return "公式记忆错误";
+  }
+
+  if (/(代码|指针|栈|循环|递归|变量|空指针|null|bug|实现|程序)/i.test(normalized)) {
+    return "代码理解错误";
+  }
+
+  if (/(复杂度|o\(|时间|空间|递归树|循环层级|指数|log|渐进)/i.test(normalized)) {
+    return "复杂度分析错误";
+  }
+
+  if (/(迁移|应用|场景|类比|综合|跨|举一反三|变式)/i.test(normalized)) {
+    return "知识迁移不足";
+  }
+
+  return "其他";
+}
+
 interface ErrorViewProps {
   errorRecords: ErrorRecord[];
   onRemediateRecord: (id: string) => void;
@@ -69,6 +129,27 @@ export default function ErrorView({ errorRecords, onRemediateRecord, onNavigateT
   const [expandedId, setExpandedId] = useState<string | null>("err-1");
   const [retryAnswers, setRetryAnswers] = useState<{ [key: string]: number }>({});
   const [retryFeedback, setRetryFeedback] = useState<{ [key: string]: { success: boolean; msg: string } }>({});
+  const [apiWrongQuestions, setApiWrongQuestions] = useState<WrongQuestionRecord[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchApiData<WrongQuestionRecord>("/api/wrong-questions")
+      .then((data) => {
+        if (!cancelled) {
+          setApiWrongQuestions(data);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setApiWrongQuestions([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filteredRecords = errorRecords.filter(r => {
     const matchesCourse = selectedCourseFilter === "all" || r.course === selectedCourseFilter;
@@ -224,6 +305,41 @@ export default function ErrorView({ errorRecords, onRemediateRecord, onNavigateT
   const totalCount = errorRecords.length;
   const remediatedCount = errorRecords.filter(r => r.remediated).length;
   const pendingCount = totalCount - remediatedCount;
+  const reasonStats = useMemo(() => {
+    const sourceTexts = apiWrongQuestions.length > 0
+      ? apiWrongQuestions.map((item) => [
+          item.error_reason,
+          item.feedback_suggestion,
+          item.recommended_action,
+          item.analysis,
+          item.question_text,
+          item.knowledge_point
+        ].filter(Boolean).join(" "))
+      : errorRecords.map((item) => [
+          item.diagnosis.rootCause,
+          item.diagnosis.cognitiveTrap,
+          item.diagnosis.learningPathAdjustment,
+          item.question,
+          item.code,
+          item.course
+        ].filter(Boolean).join(" "));
+
+    const counts = ERROR_REASON_CATEGORIES.reduce<Record<string, number>>((acc, category) => {
+      acc[category] = 0;
+      return acc;
+    }, {});
+
+    sourceTexts.forEach((text) => {
+      counts[classifyErrorReason(text)] += 1;
+    });
+
+    return ERROR_REASON_CATEGORIES.map((category) => ({
+      name: category,
+      count: counts[category],
+      advice: ERROR_REASON_ADVICE[category]
+    }));
+  }, [apiWrongQuestions, errorRecords]);
+  const reasonTop3 = reasonStats.filter((item) => item.count > 0).sort((a, b) => b.count - a.count).slice(0, 3);
 
   return (
     <div className="grid lg:grid-cols-12 gap-6 fade-in font-sans">
@@ -254,6 +370,53 @@ export default function ErrorView({ errorRecords, onRemediateRecord, onNavigateT
             <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
               <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${totalCount > 0 ? (remediatedCount / totalCount) * 100 : 100}%` }}></div>
             </div>
+          </div>
+        </section>
+
+        {/* Error reason distribution */}
+        <section className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-4">
+          <div className="space-y-1 border-b border-slate-100 pb-3">
+            <h3 className="text-xs font-bold text-slate-950 uppercase tracking-wider flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-amber-500" /> 错题原因分布图
+            </h3>
+            <p className="text-[10px] text-slate-400">
+              根据 error_reason 与题目解析关键词自动归类。
+            </p>
+          </div>
+
+          <div className="h-52">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={reasonStats} layout="vertical" margin={{ top: 4, right: 12, left: 8, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                <XAxis type="number" allowDecimals={false} tick={{ fill: "#94a3b8", fontSize: 10 }} />
+                <YAxis dataKey="name" type="category" width={72} tick={{ fill: "#64748b", fontSize: 10, fontWeight: 700 }} />
+                <Tooltip
+                  cursor={{ fill: "rgba(241, 245, 249, 0.8)" }}
+                  contentStyle={{ fontSize: "11px", borderRadius: "10px", borderColor: "#e2e8f0" }}
+                  formatter={(value: number) => [`${value} 题`, "错题数量"]}
+                />
+                <Bar dataKey="count" name="错题数量" fill="#2563eb" radius={[0, 6, 6, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="space-y-2">
+            <h4 className="text-[11px] font-extrabold text-slate-800">错因 Top 3 与复习建议</h4>
+            {reasonTop3.length > 0 ? (
+              reasonTop3.map((item, index) => (
+                <div key={item.name} className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-extrabold text-slate-800">{index + 1}. {item.name}</span>
+                    <span className="font-mono text-[10px] text-blue-600 font-black">{item.count} 题</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-relaxed font-semibold">{item.advice}</p>
+                </div>
+              ))
+            ) : (
+              <div className="py-4 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-slate-100">
+                暂无错因数据。
+              </div>
+            )}
           </div>
         </section>
 

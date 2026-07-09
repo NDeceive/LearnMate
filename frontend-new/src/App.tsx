@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { UserProfile, Course, WeakPoint, ErrorRecord, QuizQuestion } from "./types";
 import {
@@ -18,22 +18,97 @@ import PathView from "./components/PathView";
 import AssessmentView from "./components/AssessmentView";
 import ErrorView from "./components/ErrorView";
 import FocusTimer from "./components/FocusTimer";
+import KnowledgeGraph from "./components/KnowledgeGraph";
+import CodeLabView from "./components/CodeLabView";
+import SimplePlaceholderView from "./components/SimplePlaceholderView";
 
 import {
-  Cpu,
-  LogOut,
-  User,
-  LayoutDashboard,
-  MessageSquare,
-  Brain,
-  Sparkles,
-  Compass,
   Award,
-  AlertTriangle,
-  Github,
+  BookOpen,
+  Brain,
+  ClipboardList,
+  Code2,
+  Compass,
+  Cpu,
+  FileText,
+  GitBranch,
+  Home,
+  LogOut,
+  MessageSquare,
   Menu,
+  AlertTriangle,
+  User,
   X
 } from "lucide-react";
+
+interface QuizPrefill {
+  subject?: string;
+  knowledgePoint?: string;
+}
+
+interface NavigationItem {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+}
+
+interface NavigationSection {
+  title?: string;
+  items: NavigationItem[];
+}
+
+const TAB_PATHS: Record<string, string> = {
+  dashboard: "/student",
+  mentor: "/student/mentor",
+  resource: "/student/resources",
+  knowledge: "/student/knowledge",
+  path: "/student/path",
+  quiz: "/student/quiz",
+  codelab: "/student/codelab",
+  homework: "/student/homework",
+  errors: "/student/errors",
+  analytics: "/student/profile",
+  report: "/student/report"
+};
+
+function getInitialTabFromPath() {
+  if (typeof window === "undefined") return "dashboard";
+
+  const pathname = window.location.pathname.toLowerCase();
+  const match = Object.entries(TAB_PATHS).find(([, path]) => path.toLowerCase() === pathname);
+  return match ? match[0] : "dashboard";
+}
+
+function getQuizPrefillFromLocation(): QuizPrefill | null {
+  if (typeof window === "undefined") return null;
+
+  const params = new URLSearchParams(window.location.search);
+  const subject = params.get("subject") || undefined;
+  const knowledgePoint = params.get("knowledgePoint") || undefined;
+
+  return subject || knowledgePoint ? { subject, knowledgePoint } : null;
+}
+
+function buildStudentUrl(tab: string, prefillData?: any) {
+  const path = TAB_PATHS[tab] || TAB_PATHS.dashboard;
+  if (tab !== "quiz") {
+    return path;
+  }
+
+  const params = new URLSearchParams();
+  const subject = typeof prefillData === "object" ? prefillData?.subject : undefined;
+  const knowledgePoint = typeof prefillData === "object"
+    ? prefillData?.knowledgePoint
+    : typeof prefillData === "string"
+    ? prefillData
+    : undefined;
+
+  if (subject) params.set("subject", subject);
+  if (knowledgePoint) params.set("knowledgePoint", knowledgePoint);
+
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
+}
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -46,8 +121,9 @@ export default function App() {
   const [errorRecords, setErrorRecords] = useState<ErrorRecord[]>(initialErrorRecords);
 
   // Navigations
-  const [activeTab, setActiveTab] = useState<string>("dashboard");
+  const [activeTab, setActiveTab] = useState<string>(() => getInitialTabFromPath());
   const [prefillPrompt, setPrefillPrompt] = useState<string | null>(null);
+  const [quizPrefill, setQuizPrefill] = useState<QuizPrefill | null>(() => getQuizPrefillFromLocation());
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleLogin = (name: string) => {
@@ -61,11 +137,36 @@ export default function App() {
     setActiveTab("dashboard");
   };
 
+  useEffect(() => {
+    const handlePopState = () => {
+      setActiveTab(getInitialTabFromPath());
+      setQuizPrefill(getQuizPrefillFromLocation());
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
   // Deep-linking navigation across tabs with optional prefilled prompts
   const handleNavigateToTab = (tab: string, prefillData?: any) => {
     setActiveTab(tab);
     if (prefillData && typeof prefillData === "string") {
       setPrefillPrompt(prefillData);
+    }
+    if (tab === "quiz") {
+      if (prefillData && typeof prefillData === "object") {
+        setQuizPrefill({
+          subject: prefillData.subject,
+          knowledgePoint: prefillData.knowledgePoint
+        });
+      } else if (typeof prefillData === "string") {
+        setQuizPrefill({ knowledgePoint: prefillData });
+      } else {
+        setQuizPrefill(null);
+      }
+    }
+    if (typeof window !== "undefined") {
+      window.history.pushState(null, "", buildStudentUrl(tab, prefillData));
     }
   };
 
@@ -141,15 +242,43 @@ export default function App() {
     return <Portal onLogin={handleLogin} />;
   }
 
-  // Define tab navigation elements
-  const tabs = [
-    { id: "dashboard", label: "工作台", icon: <LayoutDashboard className="w-4 h-4" /> },
-    { id: "mentor", label: "AI 导师", icon: <MessageSquare className="w-4 h-4" /> },
-    { id: "quiz", label: "自适应测验", icon: <Brain className="w-4 h-4" /> },
-    { id: "resource", label: "资源生成", icon: <Sparkles className="w-4 h-4 text-amber-500" /> },
-    { id: "path", label: "学习路径", icon: <Compass className="w-4 h-4" /> },
-    { id: "analytics", label: "画像诊断", icon: <Award className="w-4 h-4" /> },
-    { id: "errors", label: "错题本", icon: <AlertTriangle className="w-4 h-4" /> }
+  // Define student sidebar navigation elements
+  const navSections: NavigationSection[] = [
+    {
+      items: [
+        { id: "dashboard", label: "首页", icon: <Home className="w-4 h-4" /> }
+      ]
+    },
+    {
+      title: "AI 学习",
+      items: [
+        { id: "mentor", label: "AI 问答", icon: <MessageSquare className="w-4 h-4" /> }
+      ]
+    },
+    {
+      title: "学习",
+      items: [
+        { id: "resource", label: "课程资源", icon: <BookOpen className="w-4 h-4" /> },
+        { id: "knowledge", label: "知识图谱", icon: <GitBranch className="w-4 h-4" /> },
+        { id: "path", label: "学习路径", icon: <Compass className="w-4 h-4" /> }
+      ]
+    },
+    {
+      title: "练习",
+      items: [
+        { id: "quiz", label: "每日测验", icon: <Brain className="w-4 h-4" /> },
+        { id: "codelab", label: "代码实验室", icon: <Code2 className="w-4 h-4" /> },
+        { id: "homework", label: "作业管理", icon: <ClipboardList className="w-4 h-4" /> },
+        { id: "errors", label: "错题本", icon: <AlertTriangle className="w-4 h-4" /> }
+      ]
+    },
+    {
+      title: "成长",
+      items: [
+        { id: "analytics", label: "学习画像", icon: <Award className="w-4 h-4" /> },
+        { id: "report", label: "评估报告", icon: <FileText className="w-4 h-4" /> }
+      ]
+    }
   ];
 
   return (
@@ -164,7 +293,7 @@ export default function App() {
 
       {/* 1. Desktop Persistent Left Sidebar */}
       <aside className="hidden lg:flex flex-col w-64 h-screen fixed top-0 left-0 border-r border-slate-200/50 bg-white/50 backdrop-blur-md z-30 p-6 justify-between shadow-sm shrink-0">
-        <div className="space-y-6">
+        <div className="space-y-5 overflow-y-auto pr-1">
           {/* Logo / Brand Header */}
           <div className="flex items-center gap-3 pb-5 border-b border-slate-100">
             <div className="bg-blue-600 p-2 rounded-xl text-white shadow-md shadow-blue-100">
@@ -190,24 +319,33 @@ export default function App() {
           </div>
 
           {/* Sidebar Navigation Tabs */}
-          <nav className="flex flex-col gap-1">
-            {tabs.map((tab) => {
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => handleNavigateToTab(tab.id)}
-                  className={`w-full px-4 py-2.5 text-xs font-bold rounded-xl transition-all flex items-center gap-2.5 cursor-pointer text-left ${
-                    isActive
-                      ? "bg-blue-600 text-white shadow-md shadow-blue-100"
-                      : "glass-nav-item text-slate-600 hover:text-slate-900 hover:bg-slate-100/40"
-                  }`}
-                >
-                  {tab.icon}
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
+          <nav className="flex flex-col gap-3">
+            {navSections.map((section, sectionIndex) => (
+              <div key={section.title || `section-${sectionIndex}`} className="space-y-1">
+                {section.title && (
+                  <p className="px-2 text-[9px] font-extrabold text-slate-400 tracking-widest uppercase">
+                    {section.title}
+                  </p>
+                )}
+                {section.items.map((tab) => {
+                  const isActive = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => handleNavigateToTab(tab.id)}
+                      className={`w-full px-4 py-2.5 text-xs font-bold rounded-xl transition-all flex items-center gap-2.5 cursor-pointer text-left ${
+                        isActive
+                          ? "bg-blue-600 text-white shadow-md shadow-blue-100"
+                          : "glass-nav-item text-slate-600 hover:text-slate-900 hover:bg-slate-100/40"
+                      }`}
+                    >
+                      {tab.icon}
+                      <span>{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
         </div>
 
@@ -284,7 +422,7 @@ export default function App() {
               transition={{ type: "spring", damping: 25, stiffness: 220 }}
               className="fixed top-0 bottom-0 left-0 w-64 bg-white/95 backdrop-blur-xl border-r border-slate-200/50 shadow-2xl z-45 p-6 flex flex-col justify-between lg:hidden"
             >
-              <div className="space-y-6">
+              <div className="space-y-5 overflow-y-auto pr-1">
                 {/* Header inside drawer */}
                 <div className="flex justify-between items-center pb-4 border-b border-slate-100">
                   <div className="flex items-center gap-2">
@@ -308,27 +446,36 @@ export default function App() {
                 </div>
 
                 {/* Mobile Menu Links */}
-                <nav className="flex flex-col gap-1">
-                  {tabs.map((tab) => {
-                    const isActive = activeTab === tab.id;
-                    return (
-                      <button
-                        key={tab.id}
-                        onClick={() => {
-                          handleNavigateToTab(tab.id);
-                          setIsMobileMenuOpen(false); // Auto close
-                        }}
-                        className={`w-full px-3.5 py-2.5 text-xs font-bold rounded-xl transition-all flex items-center gap-2.5 cursor-pointer text-left ${
-                          isActive
-                            ? "bg-blue-600 text-white shadow-md"
-                            : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                        }`}
-                      >
-                        {tab.icon}
-                        <span>{tab.label}</span>
-                      </button>
-                    );
-                  })}
+                <nav className="flex flex-col gap-3">
+                  {navSections.map((section, sectionIndex) => (
+                    <div key={section.title || `mobile-section-${sectionIndex}`} className="space-y-1">
+                      {section.title && (
+                        <p className="px-2 text-[9px] font-extrabold text-slate-400 tracking-widest uppercase">
+                          {section.title}
+                        </p>
+                      )}
+                      {section.items.map((tab) => {
+                        const isActive = activeTab === tab.id;
+                        return (
+                          <button
+                            key={tab.id}
+                            onClick={() => {
+                              handleNavigateToTab(tab.id);
+                              setIsMobileMenuOpen(false); // Auto close
+                            }}
+                            className={`w-full px-3.5 py-2.5 text-xs font-bold rounded-xl transition-all flex items-center gap-2.5 cursor-pointer text-left ${
+                              isActive
+                                ? "bg-blue-600 text-white shadow-md"
+                                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                            }`}
+                          >
+                            {tab.icon}
+                            <span>{tab.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
                 </nav>
               </div>
 
@@ -371,11 +518,20 @@ export default function App() {
           <QuizView
             onAddErrorRecord={handleAddErrorRecord}
             onNavigateToTab={handleNavigateToTab}
+            prefill={quizPrefill}
           />
         )}
 
         {activeTab === "resource" && (
           <ResourceView onNavigateToTab={handleNavigateToTab} />
+        )}
+
+        {activeTab === "knowledge" && (
+          <KnowledgeGraph
+            courses={courses}
+            weakPoints={weakPoints}
+            onNavigateToTab={handleNavigateToTab}
+          />
         )}
 
         {activeTab === "path" && (
@@ -400,6 +556,28 @@ export default function App() {
             errorRecords={errorRecords}
             onRemediateRecord={handleRemediateRecord}
             onNavigateToTab={handleNavigateToTab}
+          />
+        )}
+
+        {activeTab === "codelab" && (
+          <CodeLabView onNavigateToTab={handleNavigateToTab} />
+        )}
+
+        {activeTab === "homework" && (
+          <SimplePlaceholderView
+            title="作业管理"
+            description="作业管理模块将用于查看课程作业、提交记录、批改反馈和智能复盘任务。本阶段先预留学生端入口。"
+            actionLabel="前往课程资源"
+            onAction={() => handleNavigateToTab("resource")}
+          />
+        )}
+
+        {activeTab === "report" && (
+          <SimplePlaceholderView
+            title="评估报告"
+            description="评估报告模块将汇总阶段测验、错题修复、知识掌握变化和多智能体学习建议。本阶段先预留报告入口。"
+            actionLabel="查看学习画像"
+            onAction={() => handleNavigateToTab("analytics")}
           />
         )}
       </main>

@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { UserProfile, Course, WeakPoint, QuizQuestion } from "../types";
+import { AgentLogSummary, fetchApiData } from "../api";
 import {
   Award,
   BookOpen,
@@ -126,8 +127,32 @@ interface DashboardProps {
   onUpdateProfile?: (updates: Partial<UserProfile>) => void;
 }
 
+function formatLogTime(value: string) {
+  if (!value) return "时间未知";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function formatDuration(durationMs: number) {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return "0 ms";
+  if (durationMs < 1000) return `${Math.round(durationMs)} ms`;
+  return `${(durationMs / 1000).toFixed(1)} 秒`;
+}
+
 export default function Dashboard({ profile, courses, weakPoints, onNavigateToTab, onUpdateProfile }: DashboardProps) {
   const [selectedCourseFilter, setSelectedCourseFilter] = useState<string | null>(null);
+  const [agentLogs, setAgentLogs] = useState<AgentLogSummary[]>([]);
+  const [agentLogsLoading, setAgentLogsLoading] = useState(true);
 
   // Daily challenge states
   const [challengeStep, setChallengeStep] = useState<'idle' | 'answering' | 'completed'>('idle');
@@ -137,6 +162,31 @@ export default function Dashboard({ profile, courses, weakPoints, onNavigateToTa
   const [hasSubmittedAnswer, setHasSubmittedAnswer] = useState<boolean>(false);
   const [challengeCorrectCount, setChallengeCorrectCount] = useState<number>(0);
   const [alreadyCompletedToday, setAlreadyCompletedToday] = useState<boolean>(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchApiData<AgentLogSummary>("/api/agent-logs?limit=6")
+      .then((data) => {
+        if (!cancelled) {
+          setAgentLogs(data);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAgentLogs([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAgentLogsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const startChallenge = () => {
     // Shuffle and pick 3 random questions
@@ -188,41 +238,6 @@ export default function Dashboard({ profile, courses, weakPoints, onNavigateToTa
   const filteredWeakPoints = selectedCourseFilter
     ? weakPoints.filter(wp => wp.course === selectedCourseFilter)
     : weakPoints;
-
-  const agentActivities = [
-    {
-      agent: "ProfileAgent",
-      role: "画像诊断体",
-      status: "Success",
-      desc: "已完成最新的自适应测验结果深度比对，调优红黑树掌握权重 -5.2%",
-      time: "2分钟前",
-      active: true
-    },
-    {
-      agent: "PlannerAgent",
-      role: "路径规划体",
-      status: "Standby",
-      desc: "根据张同学最新的薄弱科目（计算机网络），自动在前置路径中注入 TCP 拥塞控制温盘大纲",
-      time: "10分钟前",
-      active: false
-    },
-    {
-      agent: "ResourceAgent",
-      role: "资源生成体",
-      status: "Standby",
-      desc: "成功生成《数据结构：红黑树的旋转平衡》个性化讲义 (Advanced)",
-      time: "1小时前",
-      active: false
-    },
-    {
-      agent: "ReviewAgent",
-      role: "代码评测体",
-      status: "Standby",
-      desc: "对二叉树迭代遍历栈代码进行了安全审查，定位并修正了1处潜在的空指针解引用边界风险",
-      time: "昨天",
-      active: false
-    }
-  ];
 
   const recentEvents = [
     { type: "test", text: "完成了「自适应测验第12关：二叉树性质专项」，得分 88", time: "2小时前" },
@@ -806,48 +821,76 @@ export default function Dashboard({ profile, courses, weakPoints, onNavigateToTa
             )}
           </section>
 
-          {/* Multi-Agent Synergy Status */}
+          {/* Multi-Agent Collaboration Timeline */}
           <section className="glass-card-dense bg-slate-900/80 backdrop-blur-xl border border-slate-850/80 text-slate-300 p-5 space-y-4 shadow-lg font-mono relative overflow-hidden">
             {/* Terminal scanner beam effect */}
             <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-transparent via-blue-500 to-transparent opacity-30 animate-pulse"></div>
 
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="text-xs font-bold text-slate-200 flex items-center gap-1.5 uppercase tracking-wider">
-                <Workflow className="w-4 h-4 text-blue-400 animate-spin" style={{ animationDuration: '6s' }} /> Multi-Agent Synergy
+                <Workflow className="w-4 h-4 text-blue-400 animate-spin" style={{ animationDuration: '6s' }} /> 多智能体协同时间线
               </h3>
               <span className="text-[9px] bg-blue-900/50 text-blue-300 border border-blue-800 px-2 py-0.5 rounded-md font-bold uppercase tracking-widest">
-                Active Logs
+                最近 6 条
               </span>
             </div>
 
-            <div className="space-y-4">
-              {agentActivities.map((act, i) => (
-                <div key={i} className="space-y-1 text-xs">
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-white font-bold">{act.agent}</span>
-                      <span className="text-[10px] text-slate-500">[{act.role}]</span>
+            {agentLogsLoading ? (
+              <div className="py-8 text-center text-[11px] text-slate-500">
+                正在读取协同记录...
+              </div>
+            ) : agentLogs.length > 0 ? (
+              <div className="space-y-0 relative">
+                <div className="absolute left-2 top-2 bottom-2 w-px bg-slate-800" />
+                {agentLogs.map((log, i) => (
+                  <div key={log.id || i} className="relative pl-7 pb-5 last:pb-0 text-xs">
+                    <span className={`absolute left-0 top-1.5 w-4 h-4 rounded-full border-2 ${
+                      log.status_label === "失败"
+                        ? "bg-rose-500 border-rose-300"
+                        : log.status_label === "已兜底"
+                        ? "bg-amber-500 border-amber-300"
+                        : "bg-emerald-500 border-emerald-300"
+                    }`} />
+
+                    <div className="space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                        <div className="space-y-0.5">
+                          <p className="text-white font-bold leading-tight">{log.agent_label}</p>
+                          <p className="text-[10px] text-blue-300 font-bold">{log.task_label}</p>
+                        </div>
+                        <div className="flex items-center gap-2 text-[9px] text-slate-500">
+                          <span className="px-2 py-0.5 rounded-md border border-slate-700 bg-slate-950/40 text-slate-300">
+                            {log.status_label}
+                          </span>
+                          <span>{formatLogTime(log.created_at)}</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5 text-[11px] leading-relaxed text-slate-400">
+                        <p><span className="text-slate-500">输入摘要：</span>{log.input_summary || "暂无输入摘要"}</p>
+                        <p><span className="text-slate-500">分析摘要：</span>{log.analysis_summary || "暂无分析摘要"}</p>
+                        <p><span className="text-slate-500">输出摘要：</span>{log.output_summary || "暂无输出摘要"}</p>
+                      </div>
+
+                      <div className="text-[9px] text-slate-600">
+                        执行耗时：{formatDuration(log.duration_ms)}
+                      </div>
                     </div>
-                    <span className={`text-[10px] font-bold ${
-                      act.active ? 'text-emerald-400 animate-pulse' : 'text-slate-500'
-                    }`}>
-                      ● {act.active ? '执行中' : '就绪'}
-                    </span>
                   </div>
-                  <p className="text-[11px] text-slate-400 leading-relaxed pl-3 border-l border-slate-800">
-                    &gt; {act.desc}
-                  </p>
-                  <div className="text-[9px] text-slate-600 pl-3">
-                    时间戳: {act.time}
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-8 text-center space-y-2">
+                <Workflow className="w-6 h-6 text-slate-700 mx-auto" />
+                <p className="text-xs font-bold text-slate-500">暂无智能体协同记录</p>
+                <p className="text-[10px] text-slate-600">接口暂不可用或还没有新的学习任务记录。</p>
+              </div>
+            )}
 
             <div className="pt-2 border-t border-slate-800 flex justify-between items-center text-[10px] text-slate-500">
-              <span>状态计数: 4/4 线程就绪</span>
+              <span>记录数量：{agentLogs.length} 条</span>
               <span className="flex items-center gap-1">
-                <Terminal className="w-3 h-3 text-blue-400" /> CLI Mode
+                <Terminal className="w-3 h-3 text-blue-400" /> 协同日志
               </span>
             </div>
           </section>
