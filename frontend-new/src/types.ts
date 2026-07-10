@@ -65,6 +65,13 @@ export interface AgentCollaboration {
   message: string;
 }
 
+export interface AgentTaskDescriptions {
+  coordinator: string;
+  theoryAgent: string;
+  codeAgent: string;
+  reviewAgent: string;
+}
+
 export interface MessagePart {
   agent: 'coordinator' | 'TheoryAgent' | 'CodeAgent' | 'ReviewAgent';
   title: string;

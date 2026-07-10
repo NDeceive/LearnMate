@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { UserProfile, Course, WeakPoint, QuizQuestion } from "../types";
-import { AgentLogSummary, fetchApiData } from "../api";
+import { AgentLogSummary, fetchApiData, type LearningEventSummary } from "../api";
 import {
   Award,
   BookOpen,
@@ -153,6 +153,7 @@ export default function Dashboard({ profile, courses, weakPoints, onNavigateToTa
   const [selectedCourseFilter, setSelectedCourseFilter] = useState<string | null>(null);
   const [agentLogs, setAgentLogs] = useState<AgentLogSummary[]>([]);
   const [agentLogsLoading, setAgentLogsLoading] = useState(true);
+  const [recentEvents, setRecentEvents] = useState<LearningEventSummary[]>([]);
 
   // Daily challenge states
   const [challengeStep, setChallengeStep] = useState<'idle' | 'answering' | 'completed'>('idle');
@@ -182,6 +183,10 @@ export default function Dashboard({ profile, courses, weakPoints, onNavigateToTa
           setAgentLogsLoading(false);
         }
       });
+
+    fetchApiData<LearningEventSummary>("/api/profile/events?limit=6")
+      .then((data) => { if (!cancelled) setRecentEvents(data); })
+      .catch(() => { if (!cancelled) setRecentEvents([]); });
 
     return () => {
       cancelled = true;
@@ -239,27 +244,10 @@ export default function Dashboard({ profile, courses, weakPoints, onNavigateToTa
     ? weakPoints.filter(wp => wp.course === selectedCourseFilter)
     : weakPoints;
 
-  const recentEvents = [
-    { type: "test", text: "完成了「自适应测验第12关：二叉树性质专项」，得分 88", time: "2小时前" },
-    { type: "resource", text: "一键生成了《多线程同步与死锁避免》精炼温盘资料", time: "1天前" },
-    { type: "error", text: "通过了对错题「进程同步PV序列」的第2次重新尝试，已标记为已消灭", time: "2天前" },
-    { type: "qa", text: "向 AI 导师提问关于「斐波那契递归时空复杂度」，获得多维智能体协作答疑", time: "3天前" }
-  ];
-
-  // Calculate today's focus hours based on profile.totalHours difference
-  // Baseline totalHours is 124. Any hours above 124 are added to today's study hours!
-  const baselineHours = 124;
-  const todayFocusHours = Math.max(1.2, Number((1.2 + (profile.totalHours - baselineHours)).toFixed(2)));
   const currentCoverage = Math.min(100, profile.knowledgeCoverage);
 
   const trendData = [
-    { day: "周二 (6/30)", hours: 1.5, coverage: 76 },
-    { day: "周三 (7/1)", hours: 2.2, coverage: 78 },
-    { day: "周四 (7/2)", hours: 1.8, coverage: 79 },
-    { day: "周五 (7/3)", hours: 3.5, coverage: 82 },
-    { day: "周六 (7/4)", hours: 4.2, coverage: 83 },
-    { day: "周日 (7/5)", hours: 5.0, coverage: 85 },
-    { day: "今天 (周一)", hours: todayFocusHours, coverage: currentCoverage },
+    { day: "当前真实数据", hours: profile.totalHours, coverage: currentCoverage },
   ];
 
   return (
@@ -902,6 +890,7 @@ export default function Dashboard({ profile, courses, weakPoints, onNavigateToTa
             </h3>
 
             <div className="space-y-4">
+              {recentEvents.length === 0 && <p className="text-xs text-slate-400">暂无真实学习事件，完成画像或测验后将在这里显示。</p>}
               {recentEvents.map((evt, i) => (
                 <div key={i} className="flex gap-3 items-start">
                   <div className={`p-1.5 rounded-lg mt-0.5 ${
@@ -917,7 +906,7 @@ export default function Dashboard({ profile, courses, weakPoints, onNavigateToTa
                   </div>
                   <div className="space-y-0.5">
                     <p className="text-xs font-medium text-slate-700 leading-relaxed">{evt.text}</p>
-                    <span className="text-[10px] text-slate-400 font-medium">{evt.time}</span>
+                    <span className="text-[10px] text-slate-400 font-medium">{new Date(evt.time).toLocaleString()}</span>
                   </div>
                 </div>
               ))}

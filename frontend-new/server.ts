@@ -11,7 +11,7 @@ const PORT = 3000;
 
 app.use(express.json());
 
-// Initialize Gemini Client
+// Initialize legacy AI client
 const apiKey = process.env.GEMINI_API_KEY;
 let ai: GoogleGenAI | null = null;
 
@@ -25,9 +25,9 @@ if (apiKey && apiKey !== "MY_GEMINI_API_KEY") {
         }
       }
     });
-    console.log("Gemini SDK initialized successfully server-side.");
+    console.log("AI SDK initialized successfully server-side.");
   } catch (error) {
-    console.error("Failed to initialize Gemini SDK:", error);
+    console.error("Failed to initialize AI SDK:", error);
   }
 } else {
   console.log("No valid GEMINI_API_KEY found, running in mock/fallback mode.");
@@ -46,7 +46,7 @@ app.post("/api/chat", async (req, res) => {
     return res.status(400).json({ error: "Message is required" });
   }
 
-  // Fallback response if Gemini isn't configured
+  // Fallback response if the AI client isn't configured
   const getFallbackResponse = (query: string) => {
     const q = query.toLowerCase();
     if (q.includes("并发") || q.includes("进程") || q.includes("死锁") || q.includes("pv")) {
@@ -225,7 +225,7 @@ ${message}`;
     return res.json({ parts });
 
   } catch (err: any) {
-    console.error("Gemini Chat API Error:", err);
+    console.error("AI Chat API Error:", err);
     // Graceful fallback on API error
     return res.json({ parts: getFallbackResponse(message), apiError: err.message });
   }
@@ -342,7 +342,7 @@ Write this resource in Markdown formatting. Do not output anything else but the 
     return res.json({ content: response.text || getFallbackResource() });
 
   } catch (err: any) {
-    console.error("Gemini Resource Gen Error:", err);
+    console.error("AI Resource Gen Error:", err);
     return res.json({ content: getFallbackResource(), apiError: err.message });
   }
 });
@@ -418,7 +418,7 @@ Ensure the question is creative and different from standard elementary questions
     return res.json({ question: parsed });
 
   } catch (err: any) {
-    console.error("Gemini Question Gen Error:", err);
+    console.error("AI Question Gen Error:", err);
     return res.json({ question: getFallbackQuestion(), apiError: err.message });
   }
 });

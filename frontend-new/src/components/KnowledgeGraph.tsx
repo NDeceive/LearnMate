@@ -21,7 +21,7 @@ import {
 interface KnowledgeGraphProps {
   courses: Course[];
   weakPoints: WeakPoint[];
-  onNavigateToTab: (tab: string, prefillPrompt?: string) => void;
+  onNavigateToTab: (tab: string, prefillData?: string | { subject?: string; knowledgePoint?: string }) => void;
 }
 
 interface GraphNode extends d3.SimulationNodeDatum {
@@ -1061,7 +1061,7 @@ export default function KnowledgeGraph({ courses, weakPoints, onNavigateToTab }:
               <div className="text-xs text-slate-400">正在读取掌握度数据...</div>
             )}
 
-            {Object.entries(groupedHeatmapRecords).map(([subject, records]) => (
+            {(Object.entries(groupedHeatmapRecords) as Array<[string, KnowledgeMasteryRecord[]]>).map(([subject, records]) => (
               <div key={subject} className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-extrabold text-slate-800">{subject}</h4>

@@ -1,10 +1,11 @@
 const fs = require("fs");
 const path = require("path");
 const dotenv = require("dotenv");
-const { pool } = require("../src/config/db");
-const { initDB } = require("../src/config/initDB");
 
 dotenv.config({ path: path.resolve(__dirname, "../.env"), quiet: true });
+
+const { pool } = require("../src/config/db");
+const { initDB } = require("../src/config/initDB");
 
 const questionBankPath = path.resolve(__dirname, "../data/question-banks/base_question_bank.json");
 

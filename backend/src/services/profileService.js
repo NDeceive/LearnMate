@@ -108,8 +108,9 @@ async function getWeakPoints({ studentId, limit } = {}) {
 }
 
 function normalizeStudentId(studentId) {
-  const value = Number(studentId || 1);
-  return Number.isInteger(value) && value > 0 ? value : 1;
+  const value = Number(studentId);
+  if (!Number.isInteger(value) || value <= 0) throw new Error("studentId 无效");
+  return value;
 }
 
 function normalizeLimit(limit) {

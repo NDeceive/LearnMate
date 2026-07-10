@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion } from "motion/react";
-import { ChatSession, ChatMessage, MessagePart } from "../types";
+import { AgentTaskDescriptions, ChatSession, ChatMessage, MessagePart } from "../types";
 import { initialSessions } from "../mockData";
+import { apiRequest } from "../api";
+import { getAgentTaskDescriptions } from "../api";
 import {
   Send,
   Plus,
@@ -26,6 +28,20 @@ interface MentorViewProps {
   onClearPrefill: () => void;
 }
 
+const LOADING_TASK_DESCRIPTIONS: AgentTaskDescriptions = {
+  coordinator: "正在分析当前问题……",
+  theoryAgent: "正在分析当前问题……",
+  codeAgent: "正在分析当前问题……",
+  reviewAgent: "正在分析当前问题……"
+};
+
+const FALLBACK_TASK_DESCRIPTIONS: AgentTaskDescriptions = {
+  coordinator: "正在分析问题目标与处理流程……",
+  theoryAgent: "正在梳理相关理论与解题依据……",
+  codeAgent: "正在设计适合当前问题的实现方案……",
+  reviewAgent: "正在检查答案正确性与边界条件……"
+};
+
 export default function MentorView({ initialPrompt, onClearPrefill }: MentorViewProps) {
   const [sessions, setSessions] = useState<ChatSession[]>(initialSessions);
   const [activeSessionId, setActiveSessionId] = useState<string>("session-1");
@@ -35,8 +51,10 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
 
   // For multi-agent live synergy visualization
   const [synergyStep, setSynergyStep] = useState<number>(0);
+  const [taskDescriptions, setTaskDescriptions] = useState<AgentTaskDescriptions>(LOADING_TASK_DESCRIPTIONS);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const taskDescriptionRequestIdRef = useRef(0);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
 
@@ -106,6 +124,21 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
     setInputText("");
     setIsSubmitting(true);
 
+    const taskDescriptionRequestId = ++taskDescriptionRequestIdRef.current;
+    setTaskDescriptions(LOADING_TASK_DESCRIPTIONS);
+    const taskDescriptionPromise = getAgentTaskDescriptions(textToSend)
+      .then((descriptions) => {
+        if (taskDescriptionRequestIdRef.current === taskDescriptionRequestId) {
+          setTaskDescriptions(descriptions);
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to generate agent task descriptions", error);
+        if (taskDescriptionRequestIdRef.current === taskDescriptionRequestId) {
+          setTaskDescriptions(FALLBACK_TASK_DESCRIPTIONS);
+        }
+      });
+
     // Multi-Agent Collaboration Panel Animation
     setSynergyStep(1); // Coordinator starts
     const timer1 = setTimeout(() => setSynergyStep(2), 1200); // TheoryAgent working
@@ -113,7 +146,7 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
     const timer3 = setTimeout(() => setSynergyStep(4), 4200); // ReviewAgent working
 
     try {
-      const response = await fetch("/api/chat", {
+      const data = await apiRequest<{ parts: ChatMessage["parts"] }>("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -121,8 +154,6 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
           history: activeSession.messages
         })
       });
-
-      const data = await response.json();
 
       const assistantMsg: ChatMessage = {
         id: "msg-agent-" + Date.now(),
@@ -148,8 +179,14 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
       clearTimeout(timer1);
       clearTimeout(timer2);
       clearTimeout(timer3);
-      setSynergyStep(0);
       setIsSubmitting(false);
+      void taskDescriptionPromise.finally(() => {
+        setTimeout(() => {
+          if (taskDescriptionRequestIdRef.current === taskDescriptionRequestId) {
+            setSynergyStep(0);
+          }
+        }, 800);
+      });
     }
   };
 
@@ -321,26 +358,26 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
 
               <div className="space-y-1.5 text-[11px]">
                 <div className="flex items-center justify-between">
-                  <span>&gt; 综合协调者 (Coordinator) 正在分发问题权重...</span>
-                  <span className={synergyStep >= 1 ? "text-emerald-400" : "text-slate-600"}>
+                  <span className="min-w-0 pr-3">&gt; 综合协调者 (Coordinator) {taskDescriptions.coordinator}</span>
+                  <span className={`shrink-0 ${synergyStep >= 1 ? "text-emerald-400" : "text-slate-600"}`}>
                     {synergyStep >= 1 ? "✓ COMPLETE" : "● PENDING"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>&gt; 学术理论智能体 (TheoryAgent) 正在提炼核心数学模型...</span>
-                  <span className={synergyStep >= 2 ? "text-emerald-400" : "text-slate-600"}>
+                  <span className="min-w-0 pr-3">&gt; 学术理论智能体 (TheoryAgent) {taskDescriptions.theoryAgent}</span>
+                  <span className={`shrink-0 ${synergyStep >= 2 ? "text-emerald-400" : "text-slate-600"}`}>
                     {synergyStep === 1 ? "★ RUNNING" : synergyStep >= 2 ? "✓ COMPLETE" : "● PENDING"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>&gt; 代码工程智能体 (CodeAgent) 正在组织最佳指针递推逻辑...</span>
-                  <span className={synergyStep >= 3 ? "text-emerald-400" : "text-slate-600"}>
+                  <span className="min-w-0 pr-3">&gt; 代码工程智能体 (CodeAgent) {taskDescriptions.codeAgent}</span>
+                  <span className={`shrink-0 ${synergyStep >= 3 ? "text-emerald-400" : "text-slate-600"}`}>
                     {synergyStep === 2 ? "★ RUNNING" : synergyStep >= 3 ? "✓ COMPLETE" : "● PENDING"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>&gt; 评估审查智能体 (ReviewAgent) 正在撰写边界条件与时空评测表...</span>
-                  <span className={synergyStep >= 4 ? "text-emerald-400" : "text-slate-600"}>
+                  <span className="min-w-0 pr-3">&gt; 评估审查智能体 (ReviewAgent) {taskDescriptions.reviewAgent}</span>
+                  <span className={`shrink-0 ${synergyStep >= 4 ? "text-emerald-400" : "text-slate-600"}`}>
                     {synergyStep === 3 ? "★ RUNNING" : synergyStep >= 4 ? "✓ COMPLETE" : "● PENDING"}
                   </span>
                 </div>

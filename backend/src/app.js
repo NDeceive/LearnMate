@@ -10,6 +10,7 @@ const wrongQuestionRoutes = require("./routes/wrongQuestions");
 const profileRoutes = require("./routes/profile");
 const agentLogRoutes = require("./routes/agentLogs");
 const codeRoutes = require("./routes/code");
+const authRoutes = require("./routes/auth");
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
 app.use("/api", healthRoutes);
+app.use("/api", authRoutes);
 app.use("/api", chatRoutes);
 app.use("/api", resourceRoutes);
 app.use("/api", quizRoutes);

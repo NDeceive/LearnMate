@@ -155,8 +155,8 @@ async function orchestrateChat({ message, history = [] }) {
   }
 }
 
-async function orchestrateResourceGeneration({ subject, topic, resourceType, difficulty }) {
-  const context = buildProfileContext({ subject, topic, resourceType, difficulty });
+async function orchestrateResourceGeneration({ subject, topic, resourceType, difficulty, personalization }) {
+  const context = buildProfileContext({ subject, topic, resourceType, difficulty, personalization });
 
   try {
     const profileSummary = await runLoggedAgent(

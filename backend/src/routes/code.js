@@ -7,6 +7,9 @@ const {
 } = require("../controllers/codeController");
 
 const router = express.Router();
+const { authMiddleware } = require("../middleware/authMiddleware");
+
+router.use(authMiddleware);
 
 router.get("/exercises", listCodeExercises);
 router.get("/exercises/:id", getCodeExercise);

@@ -1,12 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { UserProfile, Course, WeakPoint, ErrorRecord, QuizQuestion } from "./types";
-import {
-  initialProfile,
-  initialCourses,
-  initialWeakPoints,
-  initialErrorRecords
-} from "./mockData";
+import { initialCourses } from "./mockData";
 
 // Views
 import Portal from "./components/Portal";
@@ -15,12 +10,13 @@ import QuizView from "./components/QuizView";
 import MentorView from "./components/MentorView";
 import ResourceView from "./components/ResourceView";
 import PathView from "./components/PathView";
-import AssessmentView from "./components/AssessmentView";
 import ErrorView from "./components/ErrorView";
 import FocusTimer from "./components/FocusTimer";
 import KnowledgeGraph from "./components/KnowledgeGraph";
 import CodeLabView from "./components/CodeLabView";
 import SimplePlaceholderView from "./components/SimplePlaceholderView";
+import ProfileView from "./components/ProfileView";
+import { apiRequest, clearAuth, getStoredUser, login as loginRequest, type AuthUser, type ProfileResponse } from "./api";
 
 import {
   Award,
@@ -45,6 +41,7 @@ interface QuizPrefill {
   subject?: string;
   knowledgePoint?: string;
 }
+interface ResourcePrefill { resourceType?: string; title?: string; reason?: string; knowledgePointId?: string; }
 
 interface NavigationItem {
   id: string;
@@ -120,32 +117,67 @@ function buildStudentUrl(tab: string, prefillData?: any) {
 }
 
 export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [studentName, setStudentName] = useState("张同学");
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getStoredUser());
+  const isLoggedIn = Boolean(currentUser);
+  const studentName = currentUser?.displayName || "同学";
 
   // Core Global States
-  const [profile, setProfile] = useState<UserProfile>(initialProfile);
+  const [profile, setProfile] = useState<UserProfile>({ name: "同学", proficiency: 0, totalHours: 0, completionRate: 0, knowledgeCoverage: 0, streak: 0, testsTaken: 0, pendingTasks: 0, weakPointsCount: 0, extraPoints: 0 });
   const [courses, setCourses] = useState<Course[]>(initialCourses);
-  const [weakPoints, setWeakPoints] = useState<WeakPoint[]>(initialWeakPoints);
-  const [errorRecords, setErrorRecords] = useState<ErrorRecord[]>(initialErrorRecords);
+  const [weakPoints, setWeakPoints] = useState<WeakPoint[]>([]);
+  const [errorRecords, setErrorRecords] = useState<ErrorRecord[]>([]);
 
   // Navigations
   const [activeTab, setActiveTab] = useState<string>(() => getInitialTabFromPath());
   const [currentPath, setCurrentPath] = useState<string>(() => getCurrentLocationPath());
   const [prefillPrompt, setPrefillPrompt] = useState<string | null>(null);
   const [quizPrefill, setQuizPrefill] = useState<QuizPrefill | null>(() => getQuizPrefillFromLocation());
+  const [resourcePrefill, setResourcePrefill] = useState<ResourcePrefill | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const handleLogin = (name: string) => {
-    setStudentName(name);
-    setProfile((prev) => ({ ...prev, name }));
-    setIsLoggedIn(true);
+  const handleLogin = async (identifier: string, password: string) => {
+    const result = await loginRequest(identifier, password);
+    setCurrentUser(result.user);
+    setProfile((prev) => ({ ...prev, name: result.user.displayName }));
+    const learningProfile = await apiRequest<ProfileResponse>("/api/profile/me");
+    if (learningProfile.version === 0 || learningProfile.completeness < 1) {
+      setActiveTab("analytics");
+      setCurrentPath(TAB_PATHS.analytics);
+      window.history.pushState(null, "", TAB_PATHS.analytics);
+    }
   };
 
   const handleLogout = () => {
-    setIsLoggedIn(false);
+    setCurrentUser(null);
     setActiveTab("dashboard");
+    setCurrentPath(TAB_PATHS.dashboard);
+    setQuizPrefill(null);
+    setPrefillPrompt(null);
+
+    if (typeof window !== "undefined") {
+      clearAuth();
+      window.history.pushState(null, "", TAB_PATHS.dashboard);
+    }
   };
+
+  useEffect(() => {
+    setProfile((prev) => ({ ...prev, name: studentName }));
+  }, [studentName]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    apiRequest<ProfileResponse>("/api/profile/me").then((data) => {
+      const mastery = data.profile.knowledgeMastery;
+      const average = mastery.length ? Math.round(mastery.reduce((sum, item) => sum + item.mastery, 0) / mastery.length) : 0;
+      setProfile((prev) => ({ ...prev, name: currentUser.displayName, proficiency: average, knowledgeCoverage: average, weakPointsCount: mastery.filter((item) => item.mastery < 60).length, testsTaken: mastery.reduce((sum, item) => sum + item.practiceCount, 0) }));
+      setWeakPoints(mastery.filter((item) => item.mastery < 60).map((item, index) => ({ id: `api-${index}`, name: item.knowledgePoint, level: item.mastery < 40 ? "High" : "Medium", count: item.wrongCount, course: item.subject, remediationProgress: item.mastery })));
+      setCourses((current) => current.map((course) => {
+        const subject = course.name === "数据结构与算法" ? "数据结构" : course.name.replace(/\s+/g, " ");
+        const records = mastery.filter((item) => item.subject.replace(/\s+/g, " ") === subject);
+        return records.length ? { ...course, proficiency: Math.round(records.reduce((sum, item) => sum + item.mastery, 0) / records.length) } : course;
+      }));
+    }).catch(() => undefined);
+  }, [currentUser]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -175,6 +207,9 @@ export default function App() {
       } else {
         setQuizPrefill(null);
       }
+    }
+    if (tab === "resource" && prefillData && typeof prefillData === "object") {
+      setResourcePrefill(prefillData);
     }
     if (typeof window !== "undefined") {
       const nextUrl = buildStudentUrl(tab, prefillData);
@@ -548,7 +583,7 @@ export default function App() {
         )}
 
         {activeTab === "resource" && (
-          <ResourceView onNavigateToTab={handleNavigateToTab} />
+          <ResourceView onNavigateToTab={handleNavigateToTab} initialRecommendation={resourcePrefill} />
         )}
 
         {activeTab === "knowledge" && (
@@ -568,12 +603,7 @@ export default function App() {
         )}
 
         {activeTab === "analytics" && (
-          <AssessmentView
-            profile={profile}
-            courses={courses}
-            weakPoints={weakPoints}
-            onNavigateToTab={handleNavigateToTab}
-          />
+          <ProfileView onNavigateToTab={handleNavigateToTab} />
         )}
 
         {activeTab === "errors" && (
