@@ -75,8 +75,17 @@ function getInitialTabFromPath() {
   if (typeof window === "undefined") return "dashboard";
 
   const pathname = window.location.pathname.toLowerCase();
+  if (pathname === TAB_PATHS.codelab || pathname.startsWith(`${TAB_PATHS.codelab}/`)) {
+    return "codelab";
+  }
+
   const match = Object.entries(TAB_PATHS).find(([, path]) => path.toLowerCase() === pathname);
   return match ? match[0] : "dashboard";
+}
+
+function getCurrentLocationPath() {
+  if (typeof window === "undefined") return TAB_PATHS.dashboard;
+  return `${window.location.pathname}${window.location.search}`;
 }
 
 function getQuizPrefillFromLocation(): QuizPrefill | null {
@@ -122,6 +131,7 @@ export default function App() {
 
   // Navigations
   const [activeTab, setActiveTab] = useState<string>(() => getInitialTabFromPath());
+  const [currentPath, setCurrentPath] = useState<string>(() => getCurrentLocationPath());
   const [prefillPrompt, setPrefillPrompt] = useState<string | null>(null);
   const [quizPrefill, setQuizPrefill] = useState<QuizPrefill | null>(() => getQuizPrefillFromLocation());
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -140,6 +150,7 @@ export default function App() {
   useEffect(() => {
     const handlePopState = () => {
       setActiveTab(getInitialTabFromPath());
+      setCurrentPath(getCurrentLocationPath());
       setQuizPrefill(getQuizPrefillFromLocation());
     };
 
@@ -166,7 +177,21 @@ export default function App() {
       }
     }
     if (typeof window !== "undefined") {
-      window.history.pushState(null, "", buildStudentUrl(tab, prefillData));
+      const nextUrl = buildStudentUrl(tab, prefillData);
+      window.history.pushState(null, "", nextUrl);
+      setCurrentPath(nextUrl);
+    }
+  };
+
+  const handleNavigateToCodeLabPath = (exerciseId?: string) => {
+    const nextUrl = exerciseId
+      ? `${TAB_PATHS.codelab}/${encodeURIComponent(exerciseId)}`
+      : TAB_PATHS.codelab;
+
+    setActiveTab("codelab");
+    if (typeof window !== "undefined") {
+      window.history.pushState(null, "", nextUrl);
+      setCurrentPath(nextUrl);
     }
   };
 
@@ -560,7 +585,12 @@ export default function App() {
         )}
 
         {activeTab === "codelab" && (
-          <CodeLabView onNavigateToTab={handleNavigateToTab} />
+          <CodeLabView
+            routePath={currentPath}
+            onNavigateToTab={handleNavigateToTab}
+            onNavigateToExercise={(exerciseId) => handleNavigateToCodeLabPath(exerciseId)}
+            onNavigateToList={() => handleNavigateToCodeLabPath()}
+          />
         )}
 
         {activeTab === "homework" && (

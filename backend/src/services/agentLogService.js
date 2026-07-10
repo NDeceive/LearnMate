@@ -9,6 +9,7 @@ const AGENT_LABELS = {
   FeedbackAgent: "错题反馈智能体",
   TutorAgent: "智能辅导智能体",
   AssessmentAgent: "学习评估智能体",
+  CodeRunner: "代码运行智能体",
   coordinator: "系统协调智能体"
 };
 
@@ -22,7 +23,9 @@ const TASK_LABELS = {
   quiz_hint: "题目提示",
   wrong_question_feedback: "错题反馈",
   profile_update: "学习画像更新",
-  assessment: "学习评估"
+  assessment: "学习评估",
+  code_run: "代码运行",
+  code_explain: "运行结果解释"
 };
 
 const STATUS_LABELS = {
@@ -56,6 +59,16 @@ const TASK_SUMMARIES = {
     input: "读取本次作答结果。",
     analysis: "根据答题表现更新知识点掌握度。",
     output: "学习画像已更新。"
+  },
+  code_run: {
+    input: "读取代码练习编号、语言、标准输入和源码摘要。",
+    analysis: "使用 mock runner 进行安全模拟运行，不真实执行用户代码。",
+    output: "已生成模拟运行结果并记录提交。"
+  },
+  code_explain: {
+    input: "读取代码练习、源码摘要、标准输出和错误信息。",
+    analysis: "结合题目目标解释运行结果与下一步修改方向。",
+    output: "已生成代码运行结果解释。"
   }
 };
 
@@ -175,6 +188,18 @@ function buildInputSummary(taskType, inputData, fallback) {
     return joinSentence(["读取本次作答结果", result, "知识点", topic], fallback);
   }
 
+  if (taskType === "code_run") {
+    const exerciseId = pick(inputData, ["exerciseId", "context.exerciseId"]);
+    const language = pick(inputData, ["language", "context.language"]);
+    return joinSentence(["读取代码练习", exerciseId, "语言", language], fallback);
+  }
+
+  if (taskType === "code_explain") {
+    const exerciseId = pick(inputData, ["exerciseId", "context.exerciseId"]);
+    const title = pick(inputData, ["exerciseTitle", "context.exerciseTitle"]);
+    return joinSentence(["解释代码练习", exerciseId, "题目", title], fallback);
+  }
+
   return fallback;
 }
 
@@ -207,6 +232,18 @@ function buildOutputSummary(taskType, outputData, fallback, status) {
   if (taskType === "profile_update") {
     const mastery = pick(outputData, ["mastery"]);
     return mastery === "" ? fallback : `学习画像已更新，当前掌握度约为 ${mastery}。`;
+  }
+
+  if (taskType === "code_run") {
+    const runStatus = pick(outputData, ["status"]);
+    const stdout = pick(outputData, ["stdout"]);
+    if (runStatus) {
+      return truncate(`mock runner 已返回 ${runStatus}，标准输出：${stdout || "无"}`, 120);
+    }
+  }
+
+  if (taskType === "code_explain") {
+    return truncate(ensureText(outputData) || fallback, 120);
   }
 
   return fallback;

@@ -143,6 +143,58 @@ async function initDB() {
     await ensureStudentKnowledgeMasterySchema();
 
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS code_exercises (
+        id INT NOT NULL AUTO_INCREMENT,
+        exercise_id VARCHAR(120) NOT NULL,
+        subject VARCHAR(100),
+        knowledge_point VARCHAR(100),
+        title VARCHAR(200),
+        description TEXT,
+        language VARCHAR(50),
+        difficulty VARCHAR(50),
+        starter_code LONGTEXT,
+        sample_input TEXT,
+        sample_output TEXT,
+        explanation TEXT,
+        tags JSON,
+        source VARCHAR(100) DEFAULT 'system_seed',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        UNIQUE KEY uq_code_exercises_exercise_id (exercise_id),
+        KEY idx_code_exercises_subject (subject),
+        KEY idx_code_exercises_knowledge_point (knowledge_point),
+        KEY idx_code_exercises_difficulty (difficulty)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await ensureCodeExercisesSchema();
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS code_submissions (
+        id INT NOT NULL AUTO_INCREMENT,
+        student_id INT DEFAULT 1,
+        exercise_id VARCHAR(120),
+        language VARCHAR(50),
+        source_code LONGTEXT,
+        stdin TEXT,
+        stdout TEXT,
+        stderr TEXT,
+        compile_output TEXT,
+        status VARCHAR(50),
+        time_used VARCHAR(50),
+        memory_used VARCHAR(50),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY idx_code_submissions_student (student_id),
+        KEY idx_code_submissions_exercise (exercise_id),
+        KEY idx_code_submissions_created_at (created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await ensureCodeSubmissionsSchema();
+
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS agent_run_logs (
         id INT NOT NULL AUTO_INCREMENT,
         agent_name VARCHAR(100) NOT NULL,
@@ -427,6 +479,90 @@ async function ensureAgentRunLogsSchema() {
   await normalizeAgentRunLogStatuses();
   await ensureIndex("agent_run_logs", "idx_agent_run_logs_created_at", "ALTER TABLE agent_run_logs ADD KEY idx_agent_run_logs_created_at (created_at)");
   await ensureIndex("agent_run_logs", "idx_agent_run_logs_agent_task", "ALTER TABLE agent_run_logs ADD KEY idx_agent_run_logs_agent_task (agent_name, task_type)");
+}
+
+async function ensureCodeExercisesSchema() {
+  const requiredColumns = {
+    exercise_id: "VARCHAR(120)",
+    subject: "VARCHAR(100)",
+    knowledge_point: "VARCHAR(100)",
+    title: "VARCHAR(200)",
+    description: "TEXT",
+    language: "VARCHAR(50)",
+    difficulty: "VARCHAR(50)",
+    starter_code: "LONGTEXT",
+    sample_input: "TEXT",
+    sample_output: "TEXT",
+    explanation: "TEXT",
+    tags: "JSON",
+    source: "VARCHAR(100) DEFAULT 'system_seed'",
+    created_at: "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+    updated_at: "TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+  };
+
+  const [columns] = await pool.query("SHOW COLUMNS FROM code_exercises");
+  const existingColumns = new Set(columns.map((column) => column.Field));
+
+  for (const [columnName, definition] of Object.entries(requiredColumns)) {
+    if (!existingColumns.has(columnName)) {
+      await pool.query(`ALTER TABLE code_exercises ADD COLUMN \`${columnName}\` ${definition}`);
+    }
+  }
+
+  await safeModifyColumn("code_exercises", "exercise_id", "VARCHAR(120)", existingColumns);
+  await safeModifyColumn("code_exercises", "subject", "VARCHAR(100)", existingColumns);
+  await safeModifyColumn("code_exercises", "knowledge_point", "VARCHAR(100)", existingColumns);
+  await safeModifyColumn("code_exercises", "title", "VARCHAR(200)", existingColumns);
+  await safeModifyColumn("code_exercises", "language", "VARCHAR(50)", existingColumns);
+  await safeModifyColumn("code_exercises", "difficulty", "VARCHAR(50)", existingColumns);
+  await safeModifyColumn("code_exercises", "source", "VARCHAR(100) DEFAULT 'system_seed'", existingColumns);
+
+  await ensureIndex(
+    "code_exercises",
+    "uq_code_exercises_exercise_id",
+    "ALTER TABLE code_exercises ADD UNIQUE KEY uq_code_exercises_exercise_id (exercise_id)",
+    { uniqueColumn: "exercise_id" }
+  );
+  await ensureIndex("code_exercises", "idx_code_exercises_subject", "ALTER TABLE code_exercises ADD KEY idx_code_exercises_subject (subject)");
+  await ensureIndex("code_exercises", "idx_code_exercises_knowledge_point", "ALTER TABLE code_exercises ADD KEY idx_code_exercises_knowledge_point (knowledge_point)");
+  await ensureIndex("code_exercises", "idx_code_exercises_difficulty", "ALTER TABLE code_exercises ADD KEY idx_code_exercises_difficulty (difficulty)");
+}
+
+async function ensureCodeSubmissionsSchema() {
+  const requiredColumns = {
+    student_id: "INT DEFAULT 1",
+    exercise_id: "VARCHAR(120)",
+    language: "VARCHAR(50)",
+    source_code: "LONGTEXT",
+    stdin: "TEXT",
+    stdout: "TEXT",
+    stderr: "TEXT",
+    compile_output: "TEXT",
+    status: "VARCHAR(50)",
+    time_used: "VARCHAR(50)",
+    memory_used: "VARCHAR(50)",
+    created_at: "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+  };
+
+  const [columns] = await pool.query("SHOW COLUMNS FROM code_submissions");
+  const existingColumns = new Set(columns.map((column) => column.Field));
+
+  for (const [columnName, definition] of Object.entries(requiredColumns)) {
+    if (!existingColumns.has(columnName)) {
+      await pool.query(`ALTER TABLE code_submissions ADD COLUMN \`${columnName}\` ${definition}`);
+    }
+  }
+
+  await safeModifyColumn("code_submissions", "student_id", "INT DEFAULT 1", existingColumns);
+  await safeModifyColumn("code_submissions", "exercise_id", "VARCHAR(120)", existingColumns);
+  await safeModifyColumn("code_submissions", "language", "VARCHAR(50)", existingColumns);
+  await safeModifyColumn("code_submissions", "status", "VARCHAR(50)", existingColumns);
+  await safeModifyColumn("code_submissions", "time_used", "VARCHAR(50)", existingColumns);
+  await safeModifyColumn("code_submissions", "memory_used", "VARCHAR(50)", existingColumns);
+
+  await ensureIndex("code_submissions", "idx_code_submissions_student", "ALTER TABLE code_submissions ADD KEY idx_code_submissions_student (student_id)");
+  await ensureIndex("code_submissions", "idx_code_submissions_exercise", "ALTER TABLE code_submissions ADD KEY idx_code_submissions_exercise (exercise_id)");
+  await ensureIndex("code_submissions", "idx_code_submissions_created_at", "ALTER TABLE code_submissions ADD KEY idx_code_submissions_created_at (created_at)");
 }
 
 async function mergeDuplicateWrongQuestionRows() {

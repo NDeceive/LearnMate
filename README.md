@@ -16,7 +16,7 @@
 
 | 层次 | 技术 |
 |------|------|
-| 前端 | Vue 3 + TypeScript + Vite + Ant Design Vue + ECharts |
+| 前端 | React + TypeScript + Vite + Tailwind CSS + Recharts |
 | 后端 | Node.js + Express + MySQL |
 | AI | 讯飞星火 HTTP API |
 | 多智能体 | 后端自研 Agent 协同编排 |
@@ -55,29 +55,22 @@ ProfileAgent → ResourceAgent → ReviewAgent → PlannerAgent
 
 ## 七、本地运行步骤
 
-推荐直接在项目根目录使用一键脚本启动本地环境：
-
-```bash
-npm install
-npm run dev
-```
-
-也可以分别启动后端与前端。
-
 **后端（端口 5800）：**
 
 ```bash
 cd backend
 npm install
+npm run seed:base-questions
+npm run import:open-questions
 npm run dev
 ```
 
 **前端（端口 5700）：**
 
 ```bash
-cd frontend
+cd frontend-new
 npm install
-npm run dev
+npm run dev:web
 ```
 
 ## 八、环境变量配置
@@ -122,6 +115,7 @@ backend/.env
 - `AI_MODEL` 默认建议先使用 `lite`。
 - 如果使用 `generalv3` / `generalv3.5` / `4.0Ultra`，需要确认讯飞控制台已开通对应模型权限。
 - 如果 5800 端口被占用，需要先关闭占用进程或修改本地 `PORT`。
+- 代码实验室目前是前端入口预留，后续接入 `/api/code`。
 
 ---
 

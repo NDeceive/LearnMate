@@ -9,6 +9,7 @@ const openQuestionRoutes = require("./routes/openQuestions");
 const wrongQuestionRoutes = require("./routes/wrongQuestions");
 const profileRoutes = require("./routes/profile");
 const agentLogRoutes = require("./routes/agentLogs");
+const codeRoutes = require("./routes/code");
 
 const app = express();
 
@@ -23,6 +24,7 @@ app.use("/api", openQuestionRoutes);
 app.use("/api", wrongQuestionRoutes);
 app.use("/api", profileRoutes);
 app.use("/api/agent-logs", agentLogRoutes);
+app.use("/api/code", codeRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: "Not Found" });

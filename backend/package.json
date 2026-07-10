@@ -8,7 +8,8 @@
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "seed:base-questions": "node scripts/seedBaseQuestionBank.js",
-    "import:open-questions": "node scripts/importOpenQuestionBank.js"
+    "import:open-questions": "node scripts/importOpenQuestionBank.js",
+    "seed:code-exercises": "node scripts/seedCodeExercises.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
