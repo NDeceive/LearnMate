@@ -125,7 +125,7 @@ export interface PathStage {
   knowledgePoints: string[];
   questionIds: string[];
   codeExerciseIds: string[];
-  completion: { type: 'quiz' | 'codelab'; ids: string[] };
+  completion: { type: 'quiz' | 'codelab' | 'resource'; ids: string[] };
   dependsOn: string[];
   completedAt?: string | null;
   resources: string[];

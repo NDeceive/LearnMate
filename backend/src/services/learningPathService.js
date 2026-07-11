@@ -97,7 +97,7 @@ async function getCurrentLearningPath(studentId) {
   );
   if (!row) return null;
   const snapshot = parseObject(row.snapshot_json);
-  const stages = await evaluateStages(normalizedStudentId, snapshot.stages || []);
+  const stages = await evaluateStages(normalizedStudentId, snapshot.stages || [], Number(row.version));
   return {
     version: Number(row.version), title: row.title, stages,
     changeReason: row.change_reason, sourceType: row.source_type, createdAt: row.created_at,
@@ -147,14 +147,15 @@ function buildDeterministicCandidate(catalog, profile) {
   if (!entries.length) throw serviceError("题库和 CodeLab 中没有可用于规划的资源", 422);
 
   const stages = entries.map((entry, index) => {
-    const type = entry.questionIds.length ? "quiz" : "codelab";
-    const ids = type === "quiz" ? entry.questionIds.slice(0, 3) : entry.verifiedCodeExerciseIds.slice(0, 2);
+    const currentMastery = mastery.get(`${entry.subject}::${entry.knowledgePoint}`) ?? 50;
+    const type = index === 0 && currentMastery < 60 ? "resource" : entry.questionIds.length ? "quiz" : "codelab";
+    const ids = type === "resource" ? ["mind_map"] : type === "quiz" ? entry.questionIds.slice(0, 3) : entry.verifiedCodeExerciseIds.slice(0, 2);
     return {
       key: `stage-${index + 1}`,
       title: `${entry.knowledgePoint}：学习与实践`,
       subject: entry.subject,
       durationMinutes: 45 + Math.min(index, 3) * 15,
-      goals: [`掌握${entry.knowledgePoint}的核心概念`, `通过后端验证的${type === "quiz" ? "测验" : "CodeLab"}完成阶段验收`],
+      goals: [`掌握${entry.knowledgePoint}的核心概念`, `通过后端验证的${type === "quiz" ? "测验" : type === "codelab" ? "CodeLab" : "学习资源"}完成阶段验收`],
       knowledgePoints: [entry.knowledgePoint],
       questionIds: entry.questionIds.slice(0, 6),
       codeExerciseIds: entry.codeExerciseIds.slice(0, 4),
@@ -165,7 +166,7 @@ function buildDeterministicCandidate(catalog, profile) {
   return { title: preferredSubject ? `${preferredSubject}个性化学习路径` : "个性化学习路径", stages };
 }
 
-async function evaluateStages(studentId, stages) {
+async function evaluateStages(studentId, stages, pathVersion) {
   const state = new Map();
   const result = [];
   for (const stage of stages) {
@@ -175,7 +176,7 @@ async function evaluateStages(studentId, stages) {
       state.set(stage.key, locked); result.push(locked); continue;
     }
     const unlockAt = dependencyStates.reduce((latest, item) => laterDate(latest, item.completedAt), null);
-    const evidence = await completionEvidence(studentId, stage.completion, unlockAt);
+    const evidence = await completionEvidence(studentId, stage, pathVersion, unlockAt);
     const status = evidence.progress === 100 ? "completed" : "active";
     const evaluated = toPublicStage(stage, status, evidence.progress, evidence.completedAt);
     state.set(stage.key, evaluated); result.push(evaluated);
@@ -183,7 +184,8 @@ async function evaluateStages(studentId, stages) {
   return result;
 }
 
-async function completionEvidence(studentId, completion, unlockAt) {
+async function completionEvidence(studentId, stage, pathVersion, unlockAt) {
+  const completion = stage.completion;
   const ids = completion.ids || [];
   if (!ids.length) return { progress: 0, completedAt: null };
   let rows;
@@ -196,7 +198,7 @@ async function completionEvidence(studentId, completion, unlockAt) {
         GROUP BY a.question_id`,
       [studentId, ...ids, unlockAt, unlockAt]
     );
-  } else {
+  } else if (completion.type === "codelab") {
     [rows] = await pool.query(
       `SELECT s.exercise_id AS ref_id, MAX(s.created_at) AS completed_at
          FROM code_submissions s JOIN code_exercises e ON e.exercise_id = s.exercise_id
@@ -204,6 +206,17 @@ async function completionEvidence(studentId, completion, unlockAt) {
           AND (? IS NULL OR s.created_at > ?)
         GROUP BY s.exercise_id`,
       [studentId, ...ids, unlockAt, unlockAt]
+    );
+  } else {
+    [rows] = await pool.query(
+      `SELECT r.resource_type AS ref_id, MAX(p.completed_at) AS completed_at
+         FROM learning_resources r JOIN learning_resource_progress p
+           ON p.resource_id=r.id AND p.resource_version=r.current_version AND p.student_id=r.student_id
+        WHERE r.student_id=? AND r.path_version=? AND r.stage_key=? AND r.status='approved'
+          AND p.status='completed' AND r.resource_type IN (${ids.map(() => "?").join(",")})
+          AND (? IS NULL OR p.completed_at > ?)
+        GROUP BY r.resource_type`,
+      [studentId,pathVersion,stage.key,...ids,unlockAt,unlockAt]
     );
   }
   const completedIds = new Set(rows.map((row) => String(row.ref_id)));

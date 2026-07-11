@@ -1,36 +1,13 @@
-const { runResourceGeneration } = require("../services/agentOrchestrator");
-const { getCompleteProfile } = require("../services/studentProfileService");
-
-async function generateResource(req, res, next) {
-  try {
-    const { subject, topic, resourceType, difficulty, recommendationReason, errorType } = req.body || {};
-
-    if (!subject || !topic || !resourceType) {
-      return res.status(400).json({ error: "subject, topic and resourceType are required" });
-    }
-
-    const current = await getCompleteProfile(req.user.studentId);
-    const content = await runResourceGeneration({
-      subject,
-      topic,
-      resourceType,
-      difficulty,
-      personalization: {
-        weakKnowledgePoint: topic,
-        errorType: String(errorType || "").slice(0, 80),
-        recommendationReason: String(recommendationReason || "").slice(0, 300),
-        explanationPreference: current.profile.explanationPreference,
-        resourcePreferences: current.profile.resourcePreferences,
-        paceAndTimeBudget: current.profile.paceAndTimeBudget
-      }
-    });
-
-    return res.json({ content });
-  } catch (error) {
-    return next(error);
-  }
-}
-
-module.exports = {
-  generateResource
-};
+const fs=require("fs"); const services=require("../services/resourceGenerationService");
+async function generate(req,res){try{return res.json({resource:await services.generateResource({...req.body,studentId:req.user.studentId})});}catch(e){return fail(res,e);}}
+async function list(req,res){try{return res.json({data:await services.listResources(req.user.studentId,{...req.query})});}catch(e){return fail(res,e);}}
+async function detail(req,res){try{return res.json({resource:await services.getResource(req.user.studentId,req.params.resourceId)});}catch(e){return fail(res,e);}}
+async function versions(req,res){try{return res.json({data:await services.listVersions(req.user.studentId,req.params.resourceId)});}catch(e){return fail(res,e);}}
+async function versionDetail(req,res){try{return res.json({resource:await services.getResource(req.user.studentId,req.params.resourceId,req.params.version)});}catch(e){return fail(res,e);}}
+async function download(req,res){try{const file=await services.getDownload(req.user.studentId,req.params.resourceId,req.params.version);res.setHeader("Content-Type",file.mime_type);res.setHeader("Content-Length",String(file.file_size));res.setHeader("Content-Disposition",`attachment; filename*=UTF-8''${encodeURIComponent(file.original_filename)}`);return fs.createReadStream(file.absolutePath).pipe(res);}catch(e){return fail(res,e);}}
+async function open(req,res){try{return res.json({resource:await services.openResource(req.user.studentId,req.params.resourceId)});}catch(e){return fail(res,e);}}
+async function progress(req,res){try{return res.json({resource:await services.updateProgress(req.user.studentId,req.params.resourceId,req.body||{})});}catch(e){return fail(res,e);}}
+async function complete(req,res){try{return res.json({resource:await services.completeResource(req.user.studentId,req.params.resourceId)});}catch(e){return fail(res,e);}}
+async function stageResources(req,res){try{return res.json({data:await services.stageResources(req.user.studentId,req.query.pathVersion,req.params.stageKey)});}catch(e){return fail(res,e);}}
+function fail(res,e){return res.status(e.statusCode||500).json({error:e.statusCode&&e.statusCode<500?e.message:"resource operation failed"});}
+module.exports={generate,list,detail,versions,versionDetail,download,open,progress,complete,stageResources};

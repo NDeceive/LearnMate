@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { ArrowRight, Award, Brain, CheckCircle, ChevronDown, ChevronUp, Clock, Code2, Compass, History, Loader2, Lock, RefreshCw } from "lucide-react";
 import type { Course, LearningPathResponse, LearningPathVersion, PathStage, WeakPoint } from "../types";
-import { generateLearningPath, getLearningPath, getLearningPathVersions } from "../api";
+import { generateLearningPath, getLearningPath, getLearningPathVersions, listLearningResources, type LearningResource } from "../api";
 import KnowledgeGraph from "./KnowledgeGraph";
 
 interface PathViewProps {
@@ -19,6 +19,7 @@ export default function PathView({ courses, weakPoints, onNavigateToTab, onNavig
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
+  const [stageResources, setStageResources] = useState<Record<string, LearningResource[]>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -28,6 +29,8 @@ export default function PathView({ courses, weakPoints, onNavigateToTab, onNavig
       setPath(current);
       setExpandedStageId((current.stages.find((stage) => stage.status === "active") || current.stages[0])?.key || null);
       setVersions(await getLearningPathVersions());
+      const resources=await listLearningResources({status:"approved",limit:100});
+      setStageResources(resources.filter(r=>r.pathVersion===current.version).reduce<Record<string,LearningResource[]>>((groups,item)=>{(groups[item.stageKey]??=[]).push(item);return groups;},{}));
     } catch (requestError) {
       const status = (requestError as Error & { status?: number }).status;
       if (status !== 404) setError(requestError instanceof Error ? requestError.message : "学习路径加载失败");
@@ -88,7 +91,7 @@ export default function PathView({ courses, weakPoints, onNavigateToTab, onNavig
 
     <section className="space-y-4">
       <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900"><Award className="h-4 w-4 text-blue-600" />数据库路径阶段</h3>
-      {path.stages.map((stage, index) => <StageCard key={stage.key} stage={stage} index={index} expanded={expandedStageId === stage.key} onToggle={() => setExpandedStageId((value) => value === stage.key ? null : stage.key)} onQuiz={() => onNavigateToTab("quiz", { subject: stage.subject, knowledgePoint: stage.knowledgePoints[0] })} onCode={() => stage.codeExerciseIds[0] && onNavigateToExercise(stage.codeExerciseIds[0])} />)}
+      {path.stages.map((stage, index) => <StageCard key={stage.key} stage={stage} resources={stageResources[stage.key]||[]} index={index} expanded={expandedStageId === stage.key} onToggle={() => setExpandedStageId((value) => value === stage.key ? null : stage.key)} onQuiz={() => onNavigateToTab("quiz", { subject: stage.subject, knowledgePoint: stage.knowledgePoints[0] })} onCode={() => stage.codeExerciseIds[0] && onNavigateToExercise(stage.codeExerciseIds[0])} onResource={(resourceType) => onNavigateToTab("resource", { resourceType, subject: stage.subject, knowledgePointId: stage.knowledgePoints[0], stageKey: stage.key, pathVersion: path.version })} />)}
     </section>
 
     <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
@@ -98,7 +101,7 @@ export default function PathView({ courses, weakPoints, onNavigateToTab, onNavig
   </div>;
 }
 
-function StageCard({ stage, index, expanded, onToggle, onQuiz, onCode }: { key?: React.Key; stage: PathStage; index: number; expanded: boolean; onToggle: () => void; onQuiz: () => void; onCode: () => void }) {
+function StageCard({ stage, resources, index, expanded, onToggle, onQuiz, onCode, onResource }: { key?: React.Key; stage: PathStage; resources: LearningResource[]; index: number; expanded: boolean; onToggle: () => void; onQuiz: () => void; onCode: () => void; onResource: (type: "mind_map"|"pptx") => void }) {
   const completed = stage.status === "completed";
   const active = stage.status === "active";
   return <div className={`rounded-2xl border bg-white p-5 shadow-sm ${active ? "border-blue-300 ring-2 ring-blue-50" : "border-slate-100"}`}>
@@ -110,7 +113,8 @@ function StageCard({ stage, index, expanded, onToggle, onQuiz, onCode }: { key?:
       <ul className="list-disc space-y-1 pl-5 text-sm text-slate-600">{stage.goals.map((goal) => <li key={goal}>{goal}</li>)}</ul>
       <div className="flex flex-wrap gap-2">{stage.knowledgePoints.map((point) => <span key={point} className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{point}</span>)}</div>
       <div className="space-y-1 text-xs text-slate-500">{stage.resources.map((resource) => <div key={resource}>&gt; {resource}</div>)}</div>
-      {active && <div className="flex gap-2">{stage.completion.type === "quiz" ? <button onClick={onQuiz} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white"><Brain className="h-4 w-4" />开始后端验收测验<ArrowRight className="h-4 w-4" /></button> : <button onClick={onCode} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white"><Code2 className="h-4 w-4" />进入 CodeLab<ArrowRight className="h-4 w-4" /></button>}</div>}
+      {resources.length>0&&<div className="rounded-xl bg-emerald-50 p-3 text-xs text-emerald-800">{resources.map(r=><div key={r.id}>已生成 {r.resourceType} · V{r.version} · 审核 {r.review.score} 分 · 进度 {r.progress?.progressPercent||0}%</div>)}</div>}
+      {active && <div className="flex flex-wrap gap-2">{stage.completion.type === "quiz" ? <button onClick={onQuiz} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white"><Brain className="h-4 w-4" />开始后端验收测验<ArrowRight className="h-4 w-4" /></button> : stage.completion.type === "codelab" ? <button onClick={onCode} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white"><Code2 className="h-4 w-4" />进入 CodeLab<ArrowRight className="h-4 w-4" /></button> : <><button onClick={()=>onResource("mind_map")} className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white">{resources.some(r=>r.resourceType==="mind_map")?"继续学习思维导图":"生成思维导图"}</button><button onClick={()=>onResource("pptx")} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white">{resources.some(r=>r.resourceType==="pptx")?"继续学习课件":"生成个性化课件"}</button></>}</div>}
     </motion.div>}
   </div>;
 }

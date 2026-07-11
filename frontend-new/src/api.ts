@@ -165,6 +165,15 @@ export interface LearningEventSummary {
   eventType: string;
 }
 
+export interface LearningResource {
+  id: number; version: number; resourceType: "mind_map" | "pptx"; title: string; status: string;
+  subject: string; knowledgePoint: string; stageKey: string; pathVersion: number; estimatedMinutes: number;
+  generationRationale: string[]; learningObjectives: string[]; targetLearnerSummary: string;
+  content: Record<string, unknown>; review: { status: string; score: number; summary: string; issues: Array<Record<string, unknown>> };
+  progress: null | { status: string; progressPercent: number; accumulatedSeconds: number; openedAt?: string; completedAt?: string; downloadedAt?: string };
+  createdAt: string;
+}
+
 export function getAuthToken() {
   return typeof window === "undefined" ? "" : window.localStorage.getItem(AUTH_TOKEN_KEY) || "";
 }
@@ -289,6 +298,20 @@ export async function getLearningPathVersions(): Promise<LearningPathVersion[]> 
   const response = await apiRequest<{ data: LearningPathVersion[] } | LearningPathVersion[]>("/api/path/versions");
   return Array.isArray(response) ? response : response.data;
 }
+
+export async function listLearningResources(params: Record<string, string | number | undefined> = {}): Promise<LearningResource[]> {
+  const query = new URLSearchParams(); Object.entries(params).forEach(([k,v]) => { if (v !== undefined && v !== "") query.set(k,String(v)); });
+  return apiRequest<LearningResource[]>(`/api/resources${query.size ? `?${query}` : ""}`);
+}
+export async function generateLearningResource(input: { resourceType: "mind_map"|"pptx"; subject: string; knowledgePoint: string; stageKey: string; pathVersion: number; regenerate?: boolean }): Promise<LearningResource> {
+  const result=await apiRequest<{resource:LearningResource}>("/api/resources/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(input)}); return result.resource;
+}
+export async function getLearningResource(id:number,version?:number):Promise<LearningResource>{const suffix=version?`/versions/${version}`:"";const result=await apiRequest<{resource:LearningResource}>(`/api/resources/${id}${suffix}`);return result.resource;}
+export async function getResourceVersions(id:number):Promise<Array<Record<string,unknown>>>{return apiRequest<Array<Record<string,unknown>>>(`/api/resources/${id}/versions`);}
+export async function openLearningResource(id:number):Promise<LearningResource>{const r=await apiRequest<{resource:LearningResource}>(`/api/resources/${id}/open`,{method:"POST"});return r.resource;}
+export async function updateLearningResourceProgress(id:number,progressPercent:number):Promise<LearningResource>{const r=await apiRequest<{resource:LearningResource}>(`/api/resources/${id}/progress`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({progressPercent})});return r.resource;}
+export async function completeLearningResource(id:number):Promise<LearningResource>{const r=await apiRequest<{resource:LearningResource}>(`/api/resources/${id}/complete`,{method:"POST"});return r.resource;}
+export async function downloadLearningResource(id:number,version?:number):Promise<void>{const path=`/api/resources/${id}${version?`/versions/${version}`:""}/download`;let last:unknown;for(const url of buildApiCandidates(path)){try{const response=await fetch(url,withAuthHeaders());if(!response.ok)throw new Error((await response.json().catch(()=>({}))).error||`下载失败：${response.status}`);const blob=await response.blob();const disposition=response.headers.get("Content-Disposition")||"";const match=disposition.match(/filename\*=UTF-8''([^;]+)/i);const name=match?decodeURIComponent(match[1]):"LearnMate课件.pptx";const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);return;}catch(e){last=e;}}throw last||new Error("下载失败");}
 
 function buildApiCandidates(path: string) {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;

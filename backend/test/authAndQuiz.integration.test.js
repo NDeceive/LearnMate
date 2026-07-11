@@ -8,6 +8,7 @@ const app = require("../src/app");
 const { pool } = require("../src/config/db");
 const { initLearningPathDB } = require("../src/config/initLearningPathDB");
 const { seedRedBlackTreeDemo } = require("../src/config/initLearningProfileDB");
+const { initLearningResourceDB } = require("../src/config/initLearningResourceDB");
 const { createOrAdjustLearningPath } = require("../src/services/learningPathService");
 
 let zhangToken;
@@ -17,6 +18,7 @@ const previousPathVersions = new Map();
 
 test.before(async () => {
   await initLearningPathDB(pool);
+  await initLearningResourceDB(pool);
   await seedRedBlackTreeDemo(pool);
   const [rows] = await pool.query("SELECT student_id, current_version FROM student_learning_paths");
   for (const row of rows) previousPathVersions.set(Number(row.student_id), Number(row.current_version));

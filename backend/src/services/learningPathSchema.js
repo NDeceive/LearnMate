@@ -6,7 +6,7 @@ const STAGE_FIELDS = new Set([
   "questionIds", "codeExerciseIds", "completion", "dependsOn"
 ]);
 const COMPLETION_FIELDS = new Set(["type", "ids"]);
-const COMPLETION_TYPES = new Set(["quiz", "codelab"]);
+const COMPLETION_TYPES = new Set(["quiz", "codelab", "resource"]);
 
 function validateLearningPath(candidate, catalog) {
   assertPlainObject(candidate, "path");
@@ -81,7 +81,7 @@ function normalizeStage(stage, index, catalog) {
   const type = String(stage.completion.type || "");
   if (!COMPLETION_TYPES.has(type)) throw validationError(`invalid completion type for ${key}`);
   const ids = normalizeStringArray(stage.completion.ids, `${key}.completion.ids`, 1, 30);
-  const allowed = type === "quiz" ? new Set(stageQuestionIds) : new Set(stageCodeIds);
+  const allowed = type === "quiz" ? new Set(stageQuestionIds) : type === "codelab" ? new Set(stageCodeIds) : new Set(["mind_map", "pptx"]);
   if (ids.some((id) => !allowed.has(id))) throw validationError(`completion ids must be declared by stage ${key}`);
   if (type === "codelab" && ids.some((id) => !catalog.codeExerciseMap.get(id)?.pathCompletionEligible)) {
     throw validationError(`CodeLab completion is not backed by a verified judge for stage ${key}`);

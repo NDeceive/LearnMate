@@ -1,11 +1,10 @@
-const express = require("express");
-const { generateResource } = require("../controllers/resourceController");
-
-const router = express.Router();
-const { authMiddleware } = require("../middleware/authMiddleware");
-
-router.use(authMiddleware);
-
-router.post("/generate-resource", generateResource);
-
-module.exports = router;
+const express=require("express"); const {authMiddleware}=require("../middleware/authMiddleware"); const c=require("../controllers/resourceController");
+const router=express.Router();router.use(authMiddleware);
+router.post("/resources/generate",c.generate);router.get("/resources",c.list);
+router.get("/resources/:resourceId/versions/:version/download",c.download);
+router.get("/resources/:resourceId/versions/:version",c.versionDetail);
+router.get("/resources/:resourceId/versions",c.versions);
+router.get("/resources/:resourceId/download",c.download);
+router.post("/resources/:resourceId/open",c.open);router.post("/resources/:resourceId/progress",c.progress);router.post("/resources/:resourceId/complete",c.complete);
+router.get("/resources/:resourceId",c.detail);router.get("/path/me/stages/:stageKey/resources",c.stageResources);
+module.exports=router;

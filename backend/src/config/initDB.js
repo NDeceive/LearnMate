@@ -2,6 +2,7 @@ const mysql = require("mysql2/promise");
 const { pool, databaseConfig, getDatabaseName } = require("./db");
 const { initLearningProfileDB } = require("./initLearningProfileDB");
 const { initLearningPathDB } = require("./initLearningPathDB");
+const { initLearningResourceDB } = require("./initLearningResourceDB");
 
 function assertSafeDatabaseName(name) {
   if (!/^[A-Za-z0-9_$]+$/.test(name)) {
@@ -216,6 +217,7 @@ async function initDB() {
     await ensureAgentRunLogsSchema();
     await initLearningProfileDB(pool);
     await initLearningPathDB(pool);
+    await initLearningResourceDB(pool);
 
     console.log(`MySQL 连接正常，数据库：${databaseName}，question_bank、open_question_bank 表已就绪`);
     return true;

@@ -1,0 +1,3 @@
+const path=require("path");const{validatePptxFile}=require("../src/services/pptxService");
+async function main(){const input=process.argv[2];if(!input)throw new Error("用法：node scripts/verifyPptx.js <pptx-file>");const file=path.resolve(process.cwd(),input);if(path.extname(file).toLowerCase()!==".pptx")throw new Error("只允许检查 .pptx 文件");const result=await validatePptxFile(file);console.log(JSON.stringify({valid:true,file,size:result.size,requiredEntries:["[Content_Types].xml","ppt/presentation.xml","ppt/slides/slide1.xml"]},null,2));}
+main().catch(error=>{console.error(error.message);process.exitCode=1});

@@ -41,7 +41,7 @@ interface QuizPrefill {
   subject?: string;
   knowledgePoint?: string;
 }
-interface ResourcePrefill { resourceType?: string; title?: string; reason?: string; knowledgePointId?: string; }
+interface ResourcePrefill { resourceType?: string; title?: string; reason?: string; knowledgePointId?: string; subject?: string; stageKey?: string; pathVersion?: number; }
 
 interface NavigationItem {
   id: string;

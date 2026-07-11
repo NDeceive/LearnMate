@@ -11,7 +11,9 @@
     "seed:base-questions": "node scripts/seedBaseQuestionBank.js",
     "import:open-questions": "node scripts/importOpenQuestionBank.js",
     "seed:code-exercises": "node scripts/seedCodeExercises.js",
-    "seed:learning-loop": "node scripts/seedLearningLoopDemo.js"
+    "seed:learning-loop": "node scripts/seedLearningLoopDemo.js",
+    "reset:learning-resources": "node scripts/resetLearningResourceDemo.js",
+    "verify:pptx": "node scripts/verifyPptx.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
@@ -19,7 +21,9 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
+    "jszip": "^3.10.1",
     "mysql2": "^3.11.5",
+    "pptxgenjs": "^4.0.1",
     "ws": "^8.18.0"
   },
   "devDependencies": {

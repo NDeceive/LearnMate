@@ -6,6 +6,8 @@ node_modules/
 build/
 dist/
 coverage/
+backend/storage/resources/
+backend/storage/temp/
 
 # Logs
 *.log
