@@ -95,7 +95,8 @@ async function listQuestions({ subject, knowledgePoint, difficulty, limit } = {}
           tags,
           stage,
           is_core,
-          source
+          source,
+          option_error_types
         FROM question_bank
         WHERE ${where.join(" AND ")}
         ORDER BY id ASC
@@ -138,7 +139,8 @@ async function getQuestionById(questionId) {
           tags,
           stage,
           is_core,
-          source
+          source,
+          option_error_types
         FROM question_bank
         WHERE question_id = ?
         LIMIT 1
@@ -195,8 +197,19 @@ function normalizeQuestionRow(row) {
   return {
     ...row,
     tags: normalizeTags(row.tags),
+    option_error_types: normalizeObject(row.option_error_types),
     is_core: Boolean(row.is_core)
   };
+}
+
+function normalizeObject(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(value || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    return {};
+  }
 }
 
 function normalizeTags(tags) {

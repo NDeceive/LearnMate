@@ -59,7 +59,7 @@ async function runCode(req, res) {
     });
 
     await saveSubmission({
-      studentId: getStudentId(req),
+      studentId: req.user.studentId,
       exerciseId,
       language,
       sourceCode,
@@ -199,10 +199,6 @@ async function safeLogAgentRun(payload) {
   } catch (error) {
     console.warn("CodeLab agent log failed:", error.message);
   }
-}
-
-function getStudentId(req) {
-  return req.user && req.user.id ? req.user.id : 1;
 }
 
 function truncate(value, maxLength) {

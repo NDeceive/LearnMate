@@ -29,6 +29,7 @@
 - 学习路径规划
 - AI 智能问答
 - 自适应测验
+- 代码实验室 CodeLab：数据结构代码练习、样例运行、AI 解释运行结果
 - 错题本
 - 学习评估报告
 
@@ -62,6 +63,8 @@ cd backend
 npm install
 npm run seed:base-questions
 npm run import:open-questions
+npm run seed:code-exercises
+npm run seed:learning-loop
 npm run dev
 ```
 
@@ -97,10 +100,20 @@ backend/.env
 | `JWT_SECRET` | JWT 签名密钥，请替换为足够长的随机字符串 |
 | `PORT` | 后端服务端口，默认 5800 |
 | `CORS_ORIGIN` | 允许跨域的前端地址，默认 `http://localhost:5700` |
-| `AI_MODE` | AI 运行模式，`real` 调用真实接口 |
-| `AI_API_URL` | 讯飞星火接口地址 |
-| `AI_MODEL` | 使用的模型，默认建议 `lite` |
-| `AI_API_KEY` | 讯飞星火 APIPassword |
+| `SPARK_API_URL` | 讯飞星火接口地址 |
+| `SPARK_MODEL` | 使用的模型，默认建议 `lite` |
+| `SPARK_API_KEY` | 讯飞星火 APIPassword |
+| `SPARK_APP_ID` / `SPARK_API_SECRET` | WebSocket 接入时使用的应用 ID 与 APISecret，HTTP 接入可留空 |
+| `SPARK_TIMEOUT_MS` | AI 请求超时时间，默认建议 `30000` |
+| `JWT_SECRET` | JWT 签名密钥，至少 32 位随机字符串 |
+| `JWT_EXPIRES_IN` | 登录有效期，默认 `8h` |
+| `DEMO_PASSWORD` | 演示账号初始密码，入库前使用 bcrypt 哈希 |
+
+可在后端目录运行以下命令检查 AI 配置是否已启用：
+
+```bash
+node -e "require('dotenv').config(); const { isAIEnabled } = require('./src/services/aiService'); console.log(isAIEnabled())"
+```
 
 > 数据库表结构由后端启动时自动创建，首次启动会自动插入演示数据，无需手动建表。
 
@@ -112,10 +125,10 @@ backend/.env
 ## 十、注意事项
 
 - 不要提交 `.env`（`.env` / `backend/.env` / `*.env` 已在 `.gitignore` 中忽略），也不要提交任何真实 API Key。
-- `AI_MODEL` 默认建议先使用 `lite`。
+- `SPARK_MODEL` 默认建议先使用 `lite`。
 - 如果使用 `generalv3` / `generalv3.5` / `4.0Ultra`，需要确认讯飞控制台已开通对应模型权限。
 - 如果 5800 端口被占用，需要先关闭占用进程或修改本地 `PORT`。
-- 代码实验室目前是前端入口预留，后续接入 `/api/code`。
+- 代码实验室已接入 `/api/code`，当前为 Mock Runner 样例运行演示模式，不直接执行用户代码；后续可扩展接入 Judge0/Piston 沙箱，实现真实代码评测。
 
 ---
 

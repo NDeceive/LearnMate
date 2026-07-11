@@ -6,10 +6,10 @@ const DEFAULT_TIMEOUT_MS = 20000;
 function getSparkConfig() {
   return {
     appId: process.env.SPARK_APP_ID || "",
-    apiKey: process.env.SPARK_API_KEY || "",
+    apiKey: process.env.SPARK_API_KEY || process.env.AI_API_KEY || "",
     apiSecret: process.env.SPARK_API_SECRET || "",
-    apiUrl: process.env.SPARK_API_URL || "",
-    model: process.env.SPARK_MODEL || "lite",
+    apiUrl: process.env.SPARK_API_URL || process.env.AI_API_URL || "",
+    model: process.env.SPARK_MODEL || process.env.AI_MODEL || "lite",
     timeoutMs: Number(process.env.SPARK_TIMEOUT_MS || DEFAULT_TIMEOUT_MS)
   };
 }

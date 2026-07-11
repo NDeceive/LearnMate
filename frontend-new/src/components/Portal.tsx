@@ -3,21 +3,30 @@ import { motion } from "motion/react";
 import { Cpu, Sparkles, BookOpen, Compass, ClipboardCheck, ArrowRight, ShieldCheck, Database } from "lucide-react";
 
 interface PortalProps {
-  onLogin: (name: string) => void;
+  onLogin: (identifier: string, password: string) => Promise<void>;
 }
 
 export default function Portal({ onLogin }: PortalProps) {
-  const [username, setUsername] = useState("张同学");
-  const [password, setPassword] = useState("••••••••");
+  const [username, setUsername] = useState("zhangsan");
+  const [password, setPassword] = useState("123456");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim()) {
-      setError("请输入学号/用户名");
+    if (!username.trim() || !password) {
+      setError("请输入学号/用户名和密码");
       return;
     }
-    onLogin(username);
+    setSubmitting(true);
+    setError("");
+    try {
+      await onLogin(username, password);
+    } catch (loginError) {
+      setError(loginError instanceof Error ? loginError.message : "登录失败");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const capabilities = [
@@ -177,9 +186,10 @@ export default function Portal({ onLogin }: PortalProps) {
 
               <button
                 type="submit"
+                disabled={submitting}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm py-3 px-4 rounded-xl shadow-md shadow-blue-100 hover:shadow-lg transition-all flex items-center justify-center gap-2 group cursor-pointer"
               >
-                登录工作台
+                {submitting ? "正在验证…" : "登录工作台"}
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
               </button>
             </form>

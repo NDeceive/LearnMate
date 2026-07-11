@@ -7,6 +7,9 @@ const {
 } = require("../controllers/quizController");
 
 const router = express.Router();
+const { authMiddleware } = require("../middleware/authMiddleware");
+
+router.use(authMiddleware);
 
 router.get("/quiz/questions", listQuizQuestions);
 router.post("/quiz/submit", submitQuizAnswer);

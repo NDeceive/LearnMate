@@ -2,11 +2,59 @@ const {
   listKnowledgeMastery,
   getWeakPoints
 } = require("../services/profileService");
+const {
+  getCompleteProfile,
+  startDialogue,
+  sendDialogueMessage,
+  confirmDialogue,
+  patchProfile,
+  listProfileHistory,
+  listLearningEvents
+} = require("../services/studentProfileService");
+
+async function getMyProfile(req, res) {
+  try { return res.json(await getCompleteProfile(req.user.studentId)); }
+  catch (error) { return res.status(error.statusCode || 500).json({ error: error.message }); }
+}
+
+async function startProfileDialogue(req, res) {
+  try { return res.json(await startDialogue(req.user.studentId)); }
+  catch (error) { return res.status(error.statusCode || 500).json({ error: error.message }); }
+}
+
+async function postProfileDialogueMessage(req, res) {
+  try {
+    const { sessionId, message } = req.body || {};
+    return res.json(await sendDialogueMessage(req.user.studentId, sessionId, message));
+  } catch (error) { return res.status(error.statusCode || 500).json({ error: error.message }); }
+}
+
+async function confirmProfileDialogue(req, res) {
+  try {
+    const { sessionId, confirmedProfile } = req.body || {};
+    return res.json(await confirmDialogue(req.user.studentId, sessionId, confirmedProfile));
+  } catch (error) { return res.status(error.statusCode || 500).json({ error: error.message }); }
+}
+
+async function patchMyProfile(req, res) {
+  try { return res.json(await patchProfile(req.user.studentId, req.body || {})); }
+  catch (error) { return res.status(error.statusCode || 500).json({ error: error.message }); }
+}
+
+async function getProfileHistory(req, res) {
+  try { return res.json({ data: await listProfileHistory(req.user.studentId) }); }
+  catch (error) { return res.status(error.statusCode || 500).json({ error: error.message }); }
+}
+
+async function getLearningEvents(req, res) {
+  try { return res.json({ data: await listLearningEvents(req.user.studentId, req.query.limit) }); }
+  catch (error) { return res.status(error.statusCode || 500).json({ error: error.message }); }
+}
 
 async function listKnowledgeMasteryItems(req, res) {
   try {
     const data = await listKnowledgeMastery({
-      studentId: getStudentId(req),
+      studentId: req.user.studentId,
       subject: req.query.subject
     });
 
@@ -21,7 +69,7 @@ async function listKnowledgeMasteryItems(req, res) {
 async function listWeakPointItems(req, res) {
   try {
     const data = await getWeakPoints({
-      studentId: getStudentId(req),
+      studentId: req.user.studentId,
       limit: req.query.limit
     });
 
@@ -33,11 +81,14 @@ async function listWeakPointItems(req, res) {
   }
 }
 
-function getStudentId(req) {
-  return req.user && req.user.id ? req.user.id : 1;
-}
-
 module.exports = {
+  getMyProfile,
+  startProfileDialogue,
+  postProfileDialogueMessage,
+  confirmProfileDialogue,
+  patchMyProfile,
+  getProfileHistory,
+  getLearningEvents,
   listKnowledgeMasteryItems,
   listWeakPointItems
 };

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import { QuizQuestion, QuizSettings } from "../types";
-import { initialQuizQuestions } from "../mockData";
+import { apiRequest, type QuizSubmissionResult } from "../api";
 import {
   Brain,
   HelpCircle,
@@ -31,20 +31,23 @@ interface QuizViewProps {
 export default function QuizView({ onAddErrorRecord, onNavigateToTab, prefill }: QuizViewProps) {
   // Config
   const [settings, setSettings] = useState<QuizSettings>({
-    domain: "数据结构与算法",
+    domain: "数据结构",
     numQuestions: 5,
     difficulty: "advanced"
   });
 
-  const [questions, setQuestions] = useState<QuizQuestion[]>(initialQuizQuestions);
+  const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [userAnswers, setUserAnswers] = useState<{ [key: number]: number }>({});
   const [marked, setMarked] = useState<number[]>([]);
   const [isCompleted, setIsCompleted] = useState(false);
   const [timer, setTimer] = useState(450); // 7 mins 30 secs
-  const [abilityEstimate, setAbilityEstimate] = useState(1.45);
   const [loading, setLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [submission, setSubmission] = useState<QuizSubmissionResult | null>(null);
+  const [startedAt, setStartedAt] = useState<string>(new Date().toISOString());
 
   // Hint State
   const [hintText, setHintText] = useState("");
@@ -89,7 +92,7 @@ export default function QuizView({ onAddErrorRecord, onNavigateToTab, prefill }:
 
     setLoadingHint(true);
     try {
-      const res = await fetch("/api/quiz-hint", {
+      const data = await apiRequest<{ hint: string }>("/api/quiz-hint", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -98,7 +101,6 @@ export default function QuizView({ onAddErrorRecord, onNavigateToTab, prefill }:
           options: currentQ.options
         })
       });
-      const data = await res.json();
       setHintText(data.hint);
     } catch (err) {
       setHintText(currentQ.hint); // fallback
@@ -113,7 +115,7 @@ export default function QuizView({ onAddErrorRecord, onNavigateToTab, prefill }:
     setShowHint(false);
   }, [currentIndex]);
 
-  // Generate dynamic test using Gemini!
+  // Generate dynamic test using the backend quiz generation API.
   const handleGenerateQuiz = async () => {
     setIsGenerating(true);
     setLoading(true);
@@ -121,35 +123,30 @@ export default function QuizView({ onAddErrorRecord, onNavigateToTab, prefill }:
     setUserAnswers({});
     setMarked([]);
     setIsCompleted(false);
+    setSubmission(null);
+    setSubmitError("");
+    setStartedAt(new Date().toISOString());
     setTimer(settings.numQuestions * 90); // 1.5 mins per question
-    setAbilityEstimate(settings.difficulty === 'basic' ? 0.65 : settings.difficulty === 'advanced' ? 1.45 : 2.25);
 
     try {
-      // We will fetch N questions from the AI sequentially or in parallel.
-      // Let's create an array of promises
-      const generatedQuestions: QuizQuestion[] = [];
-      
-      // Let's call the API to generate questions
-      const fetchPromises = Array.from({ length: settings.numQuestions }).map(async (_, i) => {
-        const response = await fetch("/api/generate-question", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            domain: settings.domain,
-            difficulty: settings.difficulty
-          })
-        });
-        const data = await response.json();
-        return data.question;
-      });
-
-      const results = await Promise.all(fetchPromises);
+      const query = new URLSearchParams({ subject: settings.domain, difficulty: settings.difficulty, limit: String(settings.numQuestions) });
+      if (prefill?.knowledgePoint) query.set("knowledgePoint", prefill.knowledgePoint);
+      const response = await apiRequest<Array<{ question_id: string; subject: string; stem: string; code_context: string; options: Array<{ key: string; content: string }>; hint: string }>>(`/api/quiz/questions?${query}`);
+      const results = (response || []).map((item): QuizQuestion => ({
+        id: item.question_id,
+        domain: item.subject,
+        question: item.stem,
+        code: item.code_context,
+        options: item.options.map((option) => option.content),
+        answerIndex: -1,
+        explanation: "",
+        hint: item.hint
+      }));
+      if (results.length === 0) throw new Error("当前筛选条件下暂无真实题库题目");
       setQuestions(results);
     } catch (err) {
-      console.error("Failed to generate dynamic quiz, falling back to mock bank:", err);
-      // Fallback: randomized slice
-      const randomized = [...initialQuizQuestions].sort(() => 0.5 - Math.random());
-      setQuestions(randomized.slice(0, settings.numQuestions));
+      setQuestions([]);
+      setSubmitError(err instanceof Error ? err.message : "题库加载失败");
     } finally {
       setLoading(false);
       setIsGenerating(false);
@@ -162,13 +159,6 @@ export default function QuizView({ onAddErrorRecord, onNavigateToTab, prefill }:
       [currentIndex]: optionIndex
     }));
 
-    // Dynamic ability adjustment animation (mocking QuizAgent feedback)
-    const currentQ = questions[currentIndex];
-    const isCorrect = optionIndex === currentQ.answerIndex;
-    setAbilityEstimate((prev) => {
-      const delta = isCorrect ? 0.08 : -0.12;
-      return parseFloat((prev + delta).toFixed(2));
-    });
   };
 
   const handleToggleMark = () => {
@@ -193,17 +183,39 @@ export default function QuizView({ onAddErrorRecord, onNavigateToTab, prefill }:
     }
   };
 
-  const handleCompleteQuiz = () => {
-    setIsCompleted(true);
+  const handleCompleteQuiz = async () => {
+    if (submitting || questions.length === 0) return;
+    if (Object.keys(userAnswers).length !== questions.length) {
+      setSubmitError("请完成全部题目后再提交");
+      return;
+    }
+    setSubmitting(true); setSubmitError("");
     if (timerRef.current) clearInterval(timerRef.current);
-
-    // Auto add incorrect answers to the global error bank
-    questions.forEach((q, idx) => {
-      const userAns = userAnswers[idx];
-      if (userAns !== undefined && userAns !== q.answerIndex) {
-        onAddErrorRecord(q, userAns);
-      }
-    });
+    try {
+      const result = await apiRequest<QuizSubmissionResult>("/api/quiz/submit", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idempotencyKey: `web-${Date.now()}-${questions.map((item) => item.id).join("-")}`,
+          subject: settings.domain,
+          startedAt,
+          submittedAt: new Date().toISOString(),
+          answers: questions.map((question, index) => ({
+            questionId: question.id,
+            answer: String.fromCharCode(65 + userAnswers[index]),
+            durationSeconds: Math.max(0, settings.numQuestions * 90 - timer)
+          }))
+        })
+      });
+      const resultMap = new Map(result.questionResults.map((item) => [item.questionId, item]));
+      setQuestions((current) => current.map((question) => {
+        const item = resultMap.get(question.id);
+        return item ? { ...question, answerIndex: item.correctAnswer.charCodeAt(0) - 65, explanation: item.analysis } : question;
+      }));
+      setSubmission(result);
+      setIsCompleted(true);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "测验提交失败");
+    } finally { setSubmitting(false); }
   };
 
   // Format timer MM:SS
@@ -215,13 +227,12 @@ export default function QuizView({ onAddErrorRecord, onNavigateToTab, prefill }:
 
   // Calculate results statistics
   const answeredCount = Object.keys(userAnswers).length;
-  const correctCount = questions.reduce((acc, q, idx) => {
-    return acc + (userAnswers[idx] === q.answerIndex ? 1 : 0);
-  }, 0);
-  const scorePercent = Math.round((correctCount / questions.length) * 100);
+  const correctCount = submission?.correctCount || 0;
+  const scorePercent = submission?.score || 0;
 
   return (
     <div className="grid lg:grid-cols-12 gap-6 fade-in font-sans">
+      {submitError && <div className="lg:col-span-12 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-xs text-rose-700">{submitError}</div>}
       {/* LEFT: Config + Agent Status (4 Columns) */}
       <div className="lg:col-span-4 space-y-6">
         {/* Test Parameters Settings Card */}
@@ -248,7 +259,7 @@ export default function QuizView({ onAddErrorRecord, onNavigateToTab, prefill }:
                 onChange={(e) => setSettings((prev) => ({ ...prev, domain: e.target.value }))}
                 className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 transition-colors"
               >
-                <option value="数据结构与算法">数据结构与算法 (树/图/哈希)</option>
+                <option value="数据结构">数据结构与算法 (树/图/哈希)</option>
                 <option value="操作系统">操作系统 (并发/死锁/虚拟内存)</option>
                 <option value="C语言程序设计">C语言程序设计 (指针/内存越界)</option>
                 <option value="计算机网络">计算机网络 (TCP拥塞/三次握手)</option>
@@ -320,20 +331,18 @@ export default function QuizView({ onAddErrorRecord, onNavigateToTab, prefill }:
 
           <div className="space-y-2">
             <div className="flex justify-between items-center">
-              <span>当前学术能力评估系数</span>
-              <span className={`text-sm font-bold font-mono ${abilityEstimate >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {abilityEstimate >= 0 ? "+" : ""}{abilityEstimate}
-              </span>
+              <span>真实题库 / 已作答</span>
+              <span className="text-sm font-bold font-mono text-emerald-400">{questions.length} / {answeredCount}</span>
             </div>
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              随着正确率波动，协同引擎将实时调节后续抽题难度。连续答对将向上浮动解锁高级拓扑理论。
+              答案只在后端判定；提交后以确定性规则更新掌握度、错题、错误模式和画像版本。
             </p>
           </div>
 
           <div className="bg-slate-950 p-3 rounded-lg text-[10px] text-slate-500 leading-relaxed border border-slate-800">
-            &gt; Initialized with adaptive factor = {(abilityEstimate * 0.9).toFixed(2)}
+            &gt; Source: MySQL question_bank
             <br />
-            &gt; Model pipeline: gemini-3.5-flash
+            &gt; Mastery: deterministic rules
             <br />
             &gt; Listening to Student Response loops...
           </div>
@@ -385,6 +394,40 @@ export default function QuizView({ onAddErrorRecord, onNavigateToTab, prefill }:
                   : `您在本次专项测验中，在「${settings.domain}」下的部分高精细题目中暴露出偏误。未做对的题目已被 FeedbackAgent 深度溯源，诊断其错因并提供治愈路线。相关错题已经存入「错题本」，您可以随时进行再练。`}
               </p>
             </div>
+
+            {submission && (
+              <section className="rounded-2xl border border-blue-100 bg-blue-50/40 p-5 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h4 className="text-sm font-extrabold text-blue-950">本次学习反馈</h4>
+                  <span className="text-xs font-bold text-blue-700">画像 V{submission.profileUpdate.previousVersion} → V{submission.profileUpdate.currentVersion}</span>
+                </div>
+                <div className="grid md:grid-cols-2 gap-3">
+                  {submission.masteryChanges.map((change) => (
+                    <div key={change.knowledgePointId} className="rounded-xl bg-white border border-blue-100 p-4">
+                      <div className="text-xs font-bold text-slate-800">{change.knowledgePointName}</div>
+                      <div className="text-xl font-black text-blue-700 mt-1">{change.before}% → {change.after}% <span className={change.delta >= 0 ? "text-emerald-600" : "text-rose-600"}>({change.delta > 0 ? "+" : ""}{change.delta})</span></div>
+                      <p className="text-[11px] text-slate-500 mt-2">依据：{change.reason}</p>
+                    </div>
+                  ))}
+                  {submission.errorAttributions.map((item) => (
+                    <div key={`${item.knowledgePointId}-${item.errorType}`} className="rounded-xl bg-white border border-amber-100 p-4">
+                      <div className="text-xs font-bold text-amber-800">新增/累加错误特征：{item.label}</div>
+                      <p className="text-[11px] text-slate-500 mt-2">{item.evidence}</p>
+                      <p className="text-[10px] text-slate-400 mt-1">置信度 {Math.round(item.confidence * 100)}%</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-2">
+                  <h5 className="text-xs font-extrabold text-slate-800">下一步个性化资源</h5>
+                  {submission.recommendations.map((item) => (
+                    <div key={`${item.resourceType}-${item.knowledgePointId}`} className="rounded-xl bg-white border border-slate-100 p-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                      <div><div className="text-xs font-bold text-slate-800">{item.priority}. {item.title}</div><p className="text-[11px] text-slate-500 mt-1">{item.reason} · 预计 {item.estimatedMinutes} 分钟</p></div>
+                      <button onClick={() => onNavigateToTab("resource", item)} className="rounded-lg bg-blue-600 text-white px-3 py-2 text-xs font-bold">生成并学习</button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             {/* Detailed Question Review List */}
             <div className="space-y-5">
@@ -584,9 +627,10 @@ export default function QuizView({ onAddErrorRecord, onNavigateToTab, prefill }:
                     ) : (
                       <button
                         onClick={handleCompleteQuiz}
+                        disabled={submitting}
                         className="text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 px-5 py-2.5 rounded-xl transition-colors shadow-sm cursor-pointer"
                       >
-                        交卷评分
+                        {submitting ? "正在提交…" : "交卷评分"}
                       </button>
                     )}
                   </div>

@@ -7,15 +7,22 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
+    "test": "node --test",
     "seed:base-questions": "node scripts/seedBaseQuestionBank.js",
     "import:open-questions": "node scripts/importOpenQuestionBank.js",
-    "seed:code-exercises": "node scripts/seedCodeExercises.js"
+    "seed:code-exercises": "node scripts/seedCodeExercises.js",
+    "seed:learning-loop": "node scripts/seedLearningLoopDemo.js"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
     "mysql2": "^3.11.5",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.4"
   }
 }

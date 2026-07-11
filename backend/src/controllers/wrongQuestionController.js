@@ -13,7 +13,7 @@ async function listWrongQuestionItems(req, res) {
     }
 
     const data = await listWrongQuestions({
-      studentId: getStudentId(req),
+      studentId: req.user.studentId,
       status,
       subject
     });
@@ -40,7 +40,7 @@ async function patchWrongQuestionStatus(req, res) {
     }
 
     const updated = await updateWrongQuestionStatus({
-      studentId: getStudentId(req),
+      studentId: req.user.studentId,
       id,
       status
     });
@@ -55,10 +55,6 @@ async function patchWrongQuestionStatus(req, res) {
       error: error.message || "更新错题状态失败"
     });
   }
-}
-
-function getStudentId(req) {
-  return req.user && req.user.id ? req.user.id : 1;
 }
 
 module.exports = {

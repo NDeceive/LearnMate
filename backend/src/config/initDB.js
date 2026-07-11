@@ -1,5 +1,6 @@
 const mysql = require("mysql2/promise");
 const { pool, databaseConfig, getDatabaseName } = require("./db");
+const { initLearningProfileDB } = require("./initLearningProfileDB");
 
 function assertSafeDatabaseName(name) {
   if (!/^[A-Za-z0-9_$]+$/.test(name)) {
@@ -99,7 +100,7 @@ async function initDB() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS wrong_questions (
         id INT NOT NULL AUTO_INCREMENT,
-        student_id INT DEFAULT 1,
+        student_id INT NOT NULL,
         question_id VARCHAR(120) NOT NULL,
         subject VARCHAR(100),
         knowledge_point VARCHAR(100),
@@ -126,7 +127,7 @@ async function initDB() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS student_knowledge_mastery (
         id INT NOT NULL AUTO_INCREMENT,
-        student_id INT DEFAULT 1,
+        student_id INT NOT NULL,
         subject VARCHAR(100) NOT NULL,
         knowledge_point VARCHAR(100) NOT NULL,
         mastery INT DEFAULT 70,
@@ -173,7 +174,7 @@ async function initDB() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS code_submissions (
         id INT NOT NULL AUTO_INCREMENT,
-        student_id INT DEFAULT 1,
+        student_id INT NOT NULL,
         exercise_id VARCHAR(120),
         language VARCHAR(50),
         source_code LONGTEXT,
@@ -212,6 +213,7 @@ async function initDB() {
     `);
 
     await ensureAgentRunLogsSchema();
+    await initLearningProfileDB(pool);
 
     console.log(`MySQL 连接正常，数据库：${databaseName}，question_bank、open_question_bank 表已就绪`);
     return true;
@@ -368,7 +370,7 @@ async function ensureOpenQuestionBankSchema() {
 
 async function ensureWrongQuestionsSchema() {
   const requiredColumns = {
-    student_id: "INT DEFAULT 1",
+    student_id: "INT NOT NULL",
     question_id: "VARCHAR(120) NOT NULL",
     subject: "VARCHAR(100)",
     knowledge_point: "VARCHAR(100)",
@@ -394,7 +396,7 @@ async function ensureWrongQuestionsSchema() {
     }
   }
 
-  await safeModifyColumn("wrong_questions", "student_id", "INT DEFAULT 1", existingColumns);
+  await safeModifyColumn("wrong_questions", "student_id", "INT NOT NULL", existingColumns);
   await safeModifyColumn("wrong_questions", "question_id", "VARCHAR(120)", existingColumns);
   await safeModifyColumn("wrong_questions", "subject", "VARCHAR(100)", existingColumns);
   await safeModifyColumn("wrong_questions", "difficulty", "VARCHAR(50)", existingColumns);
@@ -417,7 +419,7 @@ async function ensureWrongQuestionsSchema() {
 
 async function ensureStudentKnowledgeMasterySchema() {
   const requiredColumns = {
-    student_id: "INT DEFAULT 1",
+    student_id: "INT NOT NULL",
     subject: "VARCHAR(100) NOT NULL",
     knowledge_point: "VARCHAR(100) NOT NULL",
     mastery: "INT DEFAULT 70",
@@ -435,7 +437,7 @@ async function ensureStudentKnowledgeMasterySchema() {
     }
   }
 
-  await safeModifyColumn("student_knowledge_mastery", "student_id", "INT DEFAULT 1", existingColumns);
+  await safeModifyColumn("student_knowledge_mastery", "student_id", "INT NOT NULL", existingColumns);
   await safeModifyColumn("student_knowledge_mastery", "knowledge_point_id", "INT NULL", existingColumns);
   await safeModifyColumn("student_knowledge_mastery", "mastery", "INT DEFAULT 70", existingColumns);
   await safeModifyColumn("student_knowledge_mastery", "wrong_count", "INT DEFAULT 0", existingColumns);
@@ -530,7 +532,7 @@ async function ensureCodeExercisesSchema() {
 
 async function ensureCodeSubmissionsSchema() {
   const requiredColumns = {
-    student_id: "INT DEFAULT 1",
+    student_id: "INT NOT NULL",
     exercise_id: "VARCHAR(120)",
     language: "VARCHAR(50)",
     source_code: "LONGTEXT",
@@ -553,7 +555,7 @@ async function ensureCodeSubmissionsSchema() {
     }
   }
 
-  await safeModifyColumn("code_submissions", "student_id", "INT DEFAULT 1", existingColumns);
+  await safeModifyColumn("code_submissions", "student_id", "INT NOT NULL", existingColumns);
   await safeModifyColumn("code_submissions", "exercise_id", "VARCHAR(120)", existingColumns);
   await safeModifyColumn("code_submissions", "language", "VARCHAR(50)", existingColumns);
   await safeModifyColumn("code_submissions", "status", "VARCHAR(50)", existingColumns);

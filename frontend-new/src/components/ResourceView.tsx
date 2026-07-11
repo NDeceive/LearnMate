@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import { ResourceGenerationInput, GeneratedResource } from "../types";
 import MarkdownRenderer from "./MarkdownRenderer";
+import { apiRequest } from "../api";
 import {
   Sparkles,
   Layers,
@@ -20,9 +21,10 @@ import {
 
 interface ResourceViewProps {
   onNavigateToTab: (tab: string, prefillData?: any) => void;
+  initialRecommendation?: { resourceType?: string; title?: string; reason?: string; knowledgePointId?: string } | null;
 }
 
-export default function ResourceView({ onNavigateToTab }: ResourceViewProps) {
+export default function ResourceView({ onNavigateToTab, initialRecommendation }: ResourceViewProps) {
   const [input, setInput] = useState<ResourceGenerationInput>({
     subject: "数据结构与算法",
     topic: "红黑树的自平衡旋转与插入调整规则",
@@ -41,18 +43,26 @@ export default function ResourceView({ onNavigateToTab }: ResourceViewProps) {
   const logsRef = useRef<HTMLDivElement | null>(null);
   const logIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  useEffect(() => {
+    if (!initialRecommendation) return;
+    const resourceType = initialRecommendation.resourceType === "code_lab" ? "CaseStudy"
+      : initialRecommendation.resourceType === "cheat_sheet" ? "CheatSheet"
+      : "LectureNotes";
+    setInput((current) => ({
+      ...current,
+      topic: initialRecommendation.knowledgePointId || initialRecommendation.title || current.topic,
+      resourceType
+    }));
+  }, [initialRecommendation]);
+
   const terminalSequence = [
-    "ProfileAgent: 检索【张同学】当前薄弱考点数据库... 成功。",
-    "ProfileAgent: 发现对应漏洞：二叉树平衡状态旋转变换。匹配学科大纲。",
-    "PlannerAgent: 正在规划讲义篇章结构，定位最适合 CS 学术考研深度。",
-    "PlannerAgent: 拟定 4 级大纲：理论公式定义、时空复杂度分析、C/C++核心指针实现、极值防御考题。",
-    "ResourceAgent: 启动 Gemini-3.1-Pro 高等 CS 课程专用认知模型...",
-    "ResourceAgent: 正在合成高质量的学术讲义文本中...",
-    "ResourceAgent: 正在构建符合 C++11 标准的安全指针代码...",
-    "ReviewAgent: 唤醒代码评估引擎。检查指针重定位及空值安全性...",
-    "ReviewAgent: 静态审查通过！捕获并注入 2 处潜在的 null 指针悬挂防护规则。",
-    "ReviewAgent: 完成多层嵌套公式校验。LaTeX 格式化匹配 100%。",
-    "ProfileAgent: 画像数据包合并。正在格式化成 markdown，装配前端渲染容器..."
+    "ProfileAgent: 读取学生学习画像与薄弱知识点。",
+    "PlannerAgent: 规划资料结构，确定学习目标、核心概念、例题和练习模块。",
+    "ResourceAgent: 启动讯飞星火学习资源生成模型，正在生成课程讲义...",
+    "ResourceAgent: 调用讯飞星火生成学习资源正文。",
+    "ReviewAgent: 检查内容准确性、完整性和难度匹配。",
+    "PlannerAgent: 生成后续学习路径建议。",
+    "ProfileAgent: 整合画像上下文，准备渲染学习资源。"
   ];
 
   useEffect(() => {
@@ -84,20 +94,20 @@ export default function ResourceView({ onNavigateToTab }: ResourceViewProps) {
       }
     }, 750);
 
-    // 2. Fire the real API request to server-side Gemini Pro!
+    // 2. Fire the real API request to server-side resource generation API.
     try {
-      const response = await fetch("/api/generate-resource", {
+      const data = await apiRequest<{ content: string }>("/api/generate-resource", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           subject: input.subject,
           topic: input.topic,
           resourceType: input.resourceType,
-          difficulty: input.difficulty
+          difficulty: input.difficulty,
+          recommendationReason: initialRecommendation?.reason,
+          errorType: initialRecommendation?.resourceType
         })
       });
-
-      const data = await response.json();
 
       // Wait until the terminal animation finishes or runs at least 4 lines to show realism,
       // then display the result!
@@ -171,7 +181,7 @@ export default function ResourceView({ onNavigateToTab }: ResourceViewProps) {
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { value: "LectureNotes", label: "精炼学术讲义", desc: "理论公式+代码剖析" },
-                  { value: "Homework", label: "专项考研作业", desc: "高难考题+答案详解" },
+                  { value: "Homework", label: "专项练习作业", desc: "分层练习+答案详解" },
                   { value: "CaseStudy", label: "工程案例分析", desc: "工业实践+时空折衷" },
                   { value: "CheatSheet", label: "冲刺必背小抄", desc: "核心要点+记忆口诀" }
                 ].map((t) => (
@@ -205,7 +215,7 @@ export default function ResourceView({ onNavigateToTab }: ResourceViewProps) {
                         : "border-slate-200 hover:border-slate-300 text-slate-600"
                     }`}
                   >
-                    {lvl === "Elementary" ? "初阶" : lvl === "Intermediate" ? "中等" : "高等研讨"}
+                    {lvl === "Elementary" ? "初阶" : lvl === "Intermediate" ? "中等" : "高阶"}
                   </button>
                 ))}
               </div>
@@ -240,7 +250,7 @@ export default function ResourceView({ onNavigateToTab }: ResourceViewProps) {
                 <div key={i} className="leading-relaxed whitespace-pre-wrap">
                   {log.includes("COMPLETE") || log.includes("成功") ? (
                     <span className="text-emerald-400">{log}</span>
-                  ) : log.includes("Gemini") || log.includes("启动") ? (
+                  ) : log.includes("讯飞星火") || log.includes("启动") ? (
                     <span className="text-amber-400">{log}</span>
                   ) : (
                     log
@@ -266,7 +276,7 @@ export default function ResourceView({ onNavigateToTab }: ResourceViewProps) {
             <div className="space-y-1.5">
               <h4 className="text-xs font-bold text-slate-800">ResourceAgent 正在精心书写讲义...</h4>
               <p className="text-[11px] text-slate-400 max-w-sm leading-relaxed">
-                正在组织学术名词释义、拉取 LaTeX 理论推导格式，并利用 CodeAgent 注入符合规范的指针实现。请耐心等待。
+                正在组织核心概念、例题解析和练习任务，并根据学习画像调整内容难度。请耐心等待。
               </p>
             </div>
           </div>
@@ -279,7 +289,7 @@ export default function ResourceView({ onNavigateToTab }: ResourceViewProps) {
                 <h4 className="text-xs font-bold text-slate-900">
                   {resource.topic} <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded ml-1.5">{resource.resourceType === 'LectureNotes' ? '学术讲义' : '专项作业'}</span>
                 </h4>
-                <p className="text-[10px] text-slate-400">大纲拟定：{resource.difficulty === 'Advanced' ? '高等考研难度' : '中等复习大纲'} | 生成日期：{resource.createdDate}</p>
+                <p className="text-[10px] text-slate-400">大纲拟定：{resource.difficulty === 'Advanced' ? '高阶学习难度' : '中等复习大纲'} | 生成日期：{resource.createdDate}</p>
               </div>
 
               <div className="flex gap-2">
@@ -312,7 +322,7 @@ export default function ResourceView({ onNavigateToTab }: ResourceViewProps) {
             {/* Bottom action bar */}
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center shrink-0 text-xs">
               <span className="text-slate-400 font-semibold font-mono flex items-center gap-1">
-                <Cpu className="w-3.5 h-3.5 text-blue-500" /> Model: Gemini-3.1-Pro (Curriculum Engine)
+                <Cpu className="w-3.5 h-3.5 text-blue-500" /> 模型：讯飞星火 · 计智引擎课程生成模型
               </span>
 
               <div className="flex gap-2.5">
