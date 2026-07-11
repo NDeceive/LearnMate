@@ -29,6 +29,26 @@ const PlannerAgent = {
     } catch (error) {
       return buildPlannerFallback(context);
     }
+  },
+  async planPath({ catalog, profile }) {
+    const prompt = [
+      "You are PlannerAgent. Return one strict JSON object and nothing else.",
+      "Use only the exact knowledgePoint, questionId, and exerciseId values present in catalog.",
+      "Allowed root fields: title, stages.",
+      "Allowed stage fields: key,title,subject,durationMinutes,goals,knowledgePoints,questionIds,codeExerciseIds,completion,dependsOn.",
+      "completion must contain only type and ids; type is quiz or codelab.",
+      "Dependencies must be acyclic. Do not duplicate stages or references.",
+      JSON.stringify({ catalog, profile })
+    ].join("\n");
+    const content = await generateText({
+      messages: [{ role: "system", content: "Return strict JSON only." }, { role: "user", content: prompt }],
+      temperature: 0.1,
+      maxTokens: 1800
+    });
+    if (!content || content.trim()[0] !== "{" || content.trim().slice(-1) !== "}") {
+      throw new Error("PlannerAgent did not return strict JSON");
+    }
+    return JSON.parse(content.trim());
   }
 };
 

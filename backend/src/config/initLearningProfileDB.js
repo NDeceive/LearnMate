@@ -161,7 +161,7 @@ async function initLearningProfileDB(pool) {
   await ensureColumn(pool, "quiz_attempts", "result_json", "JSON NULL");
   await seedDemoUsers(pool);
   await removeLegacyStudentDefaults(pool);
-  await seedRedBlackTreeDemo(pool);
+  if (process.env.SEED_DEMO_DATA === "true") await seedRedBlackTreeDemo(pool);
 }
 
 async function ensureColumn(pool, table, column, definition) {
@@ -325,4 +325,4 @@ async function seedRedBlackTreeDemo(pool) {
   }
 }
 
-module.exports = { initLearningProfileDB };
+module.exports = { initLearningProfileDB, seedRedBlackTreeDemo };

@@ -1,6 +1,7 @@
 const { pool } = require("../config/db");
 const { getCompleteProfile, saveProfileAndVersion } = require("./studentProfileService");
 const { inferErrorAttribution, buildRecommendations } = require("./learningRecommendationService");
+const { safelyAdjustLearningPath } = require("./learningPathService");
 
 const DIFFICULTY_WEIGHTS = { "基础": 2, easy: 2, basic: 2, "提高": 3, medium: 3, advanced: 3, "综合": 4, "冲刺": 4, hard: 4, challenge: 4 };
 
@@ -124,6 +125,12 @@ async function submitQuiz({ studentId, idempotencyKey, subject, answers, started
       [studentId, subject || questions[0]?.subject || null, JSON.stringify({ attemptId: attemptResult.insertId, score, masteryChanges, errorAttributions, recommendations })]
     );
     await connection.commit();
+    await safelyAdjustLearningPath({
+      studentId,
+      reason: `测验 ${attemptResult.insertId} 完成后动态调整`,
+      sourceType: "quiz_submission",
+      sourceEventId: String(attemptResult.insertId)
+    });
     return result;
   } catch (error) {
     await connection.rollback();

@@ -599,6 +599,7 @@ export default function App() {
             courses={courses}
             weakPoints={weakPoints}
             onNavigateToTab={handleNavigateToTab}
+            onNavigateToExercise={handleNavigateToCodeLabPath}
           />
         )}
 

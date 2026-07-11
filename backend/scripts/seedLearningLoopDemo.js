@@ -1,11 +1,13 @@
 const path = require("path");
 require("dotenv").config({ path: path.resolve(process.cwd(), ".env"), quiet: true });
 const { initDB } = require("../src/config/initDB");
+const { seedRedBlackTreeDemo } = require("../src/config/initLearningProfileDB");
 const { pool } = require("../src/config/db");
 
 async function resetDemo() {
   const initialized = await initDB();
   if (!initialized) throw new Error("数据库初始化失败");
+  await seedRedBlackTreeDemo(pool);
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();

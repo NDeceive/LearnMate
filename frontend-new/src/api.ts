@@ -1,4 +1,4 @@
-import type { AgentTaskDescriptions } from "./types";
+import type { AgentTaskDescriptions, LearningPathResponse, LearningPathVersion } from "./types";
 
 export interface AgentLogSummary {
   id: number | string;
@@ -275,6 +275,19 @@ export async function getAgentTaskDescriptions(question: string): Promise<AgentT
   }
 
   return descriptions;
+}
+
+export async function getLearningPath(): Promise<LearningPathResponse> {
+  return apiRequest<LearningPathResponse>("/api/path/me");
+}
+
+export async function generateLearningPath(): Promise<LearningPathResponse> {
+  return apiRequest<LearningPathResponse>("/api/path/generate", { method: "POST" });
+}
+
+export async function getLearningPathVersions(): Promise<LearningPathVersion[]> {
+  const response = await apiRequest<{ data: LearningPathVersion[] } | LearningPathVersion[]>("/api/path/versions");
+  return Array.isArray(response) ? response : response.data;
 }
 
 function buildApiCandidates(path: string) {

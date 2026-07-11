@@ -7,6 +7,7 @@ const { runCode: runMockCode } = require("../services/codeRunnerService");
 const { logAgentRun } = require("../services/agentLogService");
 const { orchestrateTutor } = require("../services/agentOrchestrator");
 const { isAIEnabled } = require("../services/aiService");
+const { safelyAdjustLearningPath } = require("../services/learningPathService");
 
 async function listCodeExercises(req, res) {
   try {
@@ -58,13 +59,20 @@ async function runCode(req, res) {
       stdin
     });
 
-    await saveSubmission({
+    const submission = await saveSubmission({
       studentId: req.user.studentId,
       exerciseId,
       language,
       sourceCode,
       stdin,
       result
+    });
+
+    await safelyAdjustLearningPath({
+      studentId: req.user.studentId,
+      reason: `CodeLab 提交 ${submission.id} 完成后动态调整`,
+      sourceType: "code_submission",
+      sourceEventId: String(submission.id)
     });
 
     await safeLogAgentRun({

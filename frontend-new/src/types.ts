@@ -115,14 +115,40 @@ export interface GeneratedResource {
 }
 
 export interface PathStage {
-  id: string;
+  key: string;
   title: string;
-  duration: string;
+  subject: string;
+  durationMinutes: number;
   progress: number; // 0-100
   status: 'completed' | 'active' | 'locked';
   goals: string[];
-  points: string[];
+  knowledgePoints: string[];
+  questionIds: string[];
+  codeExerciseIds: string[];
+  completion: { type: 'quiz' | 'codelab'; ids: string[] };
+  dependsOn: string[];
+  completedAt?: string | null;
   resources: string[];
+}
+
+export interface LearningPathResponse {
+  version: number;
+  title: string;
+  progress: number;
+  changeReason: string;
+  sourceType: string;
+  createdAt: string;
+  stages: PathStage[];
+}
+
+export interface LearningPathVersion {
+  version: number;
+  title: string;
+  changeReason: string;
+  sourceType: string;
+  createdAt: string;
+  stages: Array<Record<string, unknown>>;
+  diff: { added: string[]; removed: string[]; changed: string[]; reordered: boolean };
 }
 
 export interface ErrorRecord {

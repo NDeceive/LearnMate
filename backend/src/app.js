@@ -11,6 +11,7 @@ const profileRoutes = require("./routes/profile");
 const agentLogRoutes = require("./routes/agentLogs");
 const codeRoutes = require("./routes/code");
 const authRoutes = require("./routes/auth");
+const learningPathRoutes = require("./routes/learningPath");
 
 const app = express();
 
@@ -25,6 +26,7 @@ app.use("/api", quizRoutes);
 app.use("/api", openQuestionRoutes);
 app.use("/api", wrongQuestionRoutes);
 app.use("/api", profileRoutes);
+app.use("/api", learningPathRoutes);
 app.use("/api/agent-logs", agentLogRoutes);
 app.use("/api/code", codeRoutes);
 

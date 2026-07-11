@@ -1,4 +1,4 @@
-import { UserProfile, Course, WeakPoint, QuizQuestion, ChatSession, PathStage, ErrorRecord } from './types';
+import { UserProfile, Course, WeakPoint, QuizQuestion, ChatSession, ErrorRecord } from './types';
 
 export const initialProfile: UserProfile = {
   name: "张同学",
@@ -259,49 +259,6 @@ void leftRotate(Node **root, Node *x) {
         ]
       }
     ]
-  }
-];
-
-export const initialPathStages: PathStage[] = [
-  {
-    id: "stage-1",
-    title: "第一阶段：树与二叉树核心理论与遍历算法",
-    duration: "1 周",
-    progress: 100,
-    status: "completed",
-    goals: ["熟练掌握二叉树的性质、高度与节点数关系", "能手写二叉树前中后序递归与非递归遍历", "掌握层序遍历与队列模型"],
-    points: ["二叉树性质", "前/中/后序递归遍历", "层序双向队列", "非递归栈实现"],
-    resources: ["教材《数据结构(C语言版)》第六章", "LeetCode 94/144/145 经典遍历练习", "计智自适应专项测验：二叉树基础版"]
-  },
-  {
-    id: "stage-2",
-    title: "第二阶段：自平衡搜索树与高阶应用 (R-B / AVL)",
-    duration: "1-2 周",
-    progress: 25,
-    status: "active",
-    goals: ["理解BST的时间复杂度退化问题", "深度拆解AVL树的四种旋转（LL, RR, LR, RL）", "掌握红黑树的5个红黑平衡性质、插入与删除自平衡步骤"],
-    points: ["二叉搜索树BST退化", "AVL树高度平衡", "红黑树红黑条件", "旋转与变色规则"],
-    resources: ["视频课：红黑树底物理图解", "LeetCode 109 将有序链表转换为二叉搜索树", "AI Mentor 交互：左旋右旋深度对话"]
-  },
-  {
-    id: "stage-3",
-    title: "第三阶段：图论基础与核心遍历算法 (BFS / DFS / 拓扑)",
-    duration: "1.5 周",
-    progress: 0,
-    status: "locked",
-    goals: ["掌握邻接矩阵与邻接表的空间取舍", "熟练手写深度优先(DFS)与广度优先(BFS)", "理解并实现AOV网拓扑排序(Kahn算法)"],
-    points: ["邻接表与矩阵", "DFS状态栈", "BFS路径最短性", "入度表与拓扑排序"],
-    resources: ["教材《数据结构》图论基础部分", "LeetCode 207 课程表（经典拓扑排序）", "计智推荐：图论路径规划案例"]
-  },
-  {
-    id: "stage-4",
-    title: "第四阶段：图的最短路径与最小生成树 (Dijkstra / Prim)",
-    duration: "1 周",
-    progress: 0,
-    status: "locked",
-    goals: ["掌握并能推演 Dijkstra 单源最短路径算法", "对比 Floyd-Warshall 算法在稠密图的表现", "掌握 Prim 与 Kruskal 最小生成树原理及并查集优化"],
-    points: ["Dijkstra松弛操作", "Floyd多源DP", "Prim贪心加点", "Kruskal并查集加边"],
-    resources: ["经典论文阅读：Dijkstra 原始方案与堆优化", "LeetCode 743 网络延迟时间", "计智引擎：期末大作业仿真模拟集"]
   }
 ];
 
