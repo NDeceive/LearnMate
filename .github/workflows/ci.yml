@@ -175,7 +175,7 @@ jobs:
           npm run demo:verify
       - name: Verify reset safety guards
         run: |
-          if DEMO_RESET_CONFIRM= npm run demo:reset; then
+          if DEMO_RESET_CONFIRM='' npm run demo:reset; then
             echo "Demo reset unexpectedly succeeded without confirmation."
             exit 1
           fi
