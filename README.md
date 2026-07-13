@@ -56,87 +56,51 @@ ProfileAgent → ResourceAgent → ReviewAgent → PlannerAgent
 
 ## 七、本地运行步骤
 
-**后端（端口 5800）：**
+推荐使用 Docker Compose 一次启动 MySQL、后端和两套前端：
 
 ```bash
-cd backend
-npm install
-npm run seed:base-questions
-npm run import:open-questions
-npm run seed:code-exercises
-npm run seed:learning-loop
-npm run dev
+cp .env.docker.example .env
+# 在本机 .env 中填写必填秘密
+docker compose up -d --build
+docker compose ps
 ```
 
-**前端（端口 5700）：**
-
-```bash
-cd frontend-new
-npm install
-npm run dev:web
-```
+详细环境变量、初始化和升级步骤见 [部署指南](docs/deployment.md)。不使用 Docker 时，分别在 `backend`、`frontend-new` 与 `frontend-teacher` 中执行 `npm ci`，再执行各自的 `npm run dev`；后端启动前需要配置 MySQL 与 `backend/.env`。
 
 ## 八、环境变量配置
 
-后端环境变量通过 `backend/.env` 文件读取。请复制示例文件：
+- Docker Compose：复制根目录 `.env.docker.example` 为不提交的 `.env`；
+- 后端单独运行：复制 `backend/.env.example` 为 `backend/.env`；
+- 两套前端单独运行：参考各自 `.env.example`，其中只允许公开的 `VITE_*` 配置。
 
-```bash
-backend/.env.example
-```
+Docker 生产必填项包括 `MYSQL_ROOT_PASSWORD`、`DB_PASSWORD` 和至少 32 个字符的 `JWT_SECRET`。`DEMO_PASSWORD` 只在显式创建比赛演示账号时使用，入库前由 bcrypt 哈希。讯飞配置是可选的运行时秘密；`AI_ENABLED=false` 时基础功能使用确定性路径，不要求真实 AI Key。
 
-为：
-
-```bash
-backend/.env
-```
-
-然后填写数据库密码与讯飞星火 APIPassword：
-
-| 字段 | 说明 |
-|------|------|
-| `DB_HOST` / `DB_PORT` | 数据库地址与端口 |
-| `DB_USER` / `DB_PASSWORD` | MySQL 用户名与密码（填写你本地的 MySQL 密码） |
-| `DB_NAME` | 数据库名，默认 `edusmart` |
-| `JWT_SECRET` | JWT 签名密钥，请替换为足够长的随机字符串 |
-| `PORT` | 后端服务端口，默认 5800 |
-| `CORS_ORIGIN` | 允许跨域的前端地址，默认 `http://localhost:5700` |
-| `SPARK_API_URL` | 讯飞星火接口地址 |
-| `SPARK_MODEL` | 使用的模型，默认建议 `lite` |
-| `SPARK_API_KEY` | 讯飞星火 APIPassword |
-| `SPARK_APP_ID` / `SPARK_API_SECRET` | WebSocket 接入时使用的应用 ID 与 APISecret，HTTP 接入可留空 |
-| `SPARK_TIMEOUT_MS` | AI 请求超时时间，默认建议 `30000` |
-| `JWT_SECRET` | JWT 签名密钥，至少 32 位随机字符串 |
-| `JWT_EXPIRES_IN` | 登录有效期，默认 `8h` |
-| `DEMO_PASSWORD` | 演示账号初始密码，入库前使用 bcrypt 哈希 |
-
-可在后端目录运行以下命令检查 AI 配置是否已启用：
-
-```bash
-node -e "require('dotenv').config(); const { isAIEnabled } = require('./src/services/aiService'); console.log(isAIEnabled())"
-```
-
-> 数据库表结构由后端启动时自动创建，首次启动会自动插入演示数据，无需手动建表。
+数据库迁移、知识库导入和演示 seed 均为幂等操作，但只有对应环境开关为 `true` 时才在容器启动阶段执行；系统不会自动复位数据。
 
 ## 九、本地访问地址
 
-- 前端：http://localhost:5700
+- 学生端：http://localhost:8080
+- 教师端：http://localhost:8081
 - 后端：http://localhost:5800
+- 健康检查：http://localhost:5800/api/health
 
-## 十、注意事项
+## 十、交付与运维文档
 
-- 不要提交 `.env`（`.env` / `backend/.env` / `*.env` 已在 `.gitignore` 中忽略），也不要提交任何真实 API Key。
-- `SPARK_MODEL` 默认建议先使用 `lite`。
-- 如果使用 `generalv3` / `generalv3.5` / `4.0Ultra`，需要确认讯飞控制台已开通对应模型权限。
-- 如果 5800 端口被占用，需要先关闭占用进程或修改本地 `PORT`。
-- 代码实验室已接入 `/api/code`，当前为 Mock Runner 样例运行演示模式，不直接执行用户代码；后续可扩展接入 Judge0/Piston 沙箱，实现真实代码评测。
+- [Docker 部署、环境变量和生产安全](docs/deployment.md)
+- [比赛演示运行手册](docs/demo-runbook.md)
+- [备份、恢复、日志和密钥轮换](docs/operations.md)
+
+不要提交 `.env`、真实密码、AI Key、JWT 密钥、`node_modules`、`dist` 或生成的私人 PDF/PPTX。CodeLab 当前是明确标识的演示运行器，不执行不受信任的任意代码，也不宣称为安全沙箱或实时监考能力。
 
 ---
 
 ## 教师端与演示账号
 
-教师端位于 `frontend-teacher`，默认开发地址为 `http://localhost:3001`，通过 `VITE_API_BASE_URL` 与学生端共用 LearnMate 后端。
+教师端位于 `frontend-teacher`，Docker 访问地址为 `http://localhost:8081`，通过同源 `/api` 与学生端共用 LearnMate 后端。开发服务器端口以该目录的 Vite 配置为准。
 
-设置 `DEMO_PASSWORD` 后，后端会幂等创建 `teacher_demo`（TEACHER）、数据结构演示班级，并关联已有的 `zhangsan` 与 `lisi` 学生数据。所有演示账号密码均使用该环境变量并以 bcrypt 哈希入库；仓库和文档不保存明文密码。
+设置 `DEMO_PASSWORD` 后，显式执行 `npm run demo:seed`（或同时启用 `SEED_DEMO_DATA=true`）会幂等创建 `teacher_demo`（TEACHER）、数据结构演示班级，并关联 `zhangsan` 与 `lisi` 学生数据。仅设置密码不会自动写入演示数据。所有演示账号密码均使用该环境变量并以 bcrypt 哈希入库；仓库和文档不保存明文密码。
+
+旧数据卷若已有未标记的历史演示账号，默认 seed 会拒绝接管；备份并核验后可按部署指南执行一次 `demo:adopt-legacy`，该操作需要独立确认值并记录审计。
 
 报告 PDF 使用本机 Edge/Chrome 无头打印并校验 `%PDF-` 文件头与 SHA-256。Windows 默认使用系统中文字体；其他环境请配置 `REPORT_BROWSER_PATH` 和 `REPORT_FONT_PATH`。
 

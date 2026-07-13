@@ -1,0 +1,331 @@
+name: CI
+
+"on":
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24.17.0"
+
+jobs:
+  backend-test:
+    name: Backend tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      mysql:
+        image: mysql:8.4.10
+        env:
+          MYSQL_DATABASE: learnmate_ci
+          MYSQL_ROOT_PASSWORD: ci_mysql_root_password
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      PORT: "5800"
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+      DB_USER: root
+      DB_PASSWORD: ci_mysql_root_password
+      DB_NAME: learnmate_ci
+      JWT_SECRET: ci-only-jwt-secret-with-at-least-thirty-two-characters
+      JWT_EXPIRES_IN: 1h
+      DEMO_PASSWORD: ci-only-demo-password
+      SEED_DEMO_DATA: "false"
+      KNOWLEDGE_IMPORT_ON_START: "false"
+      AI_ENABLED: "false"
+      PATH_PLANNER_AI_ENABLED: "false"
+      MULTIMODAL_RESOURCE_AI_ENABLED: "false"
+      MULTIMODAL_REVIEW_AI_ENABLED: "false"
+      SPARK_API_KEY: ""
+      SPARK_APP_ID: ""
+      SPARK_API_SECRET: ""
+      CORS_ALLOWED_ORIGINS: http://localhost:8080,http://localhost:8081
+      RESOURCE_STORAGE_DIR: /tmp/learnmate/backend-test/resources
+      REPORT_STORAGE_DIR: /tmp/learnmate/backend-test/reports
+      REPORT_BROWSER_PATH: /usr/bin/google-chrome
+      REPORT_FONT_PATH: /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
+      DB_INIT_MAX_ATTEMPTS: "20"
+      DB_INIT_RETRY_MS: "1000"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install Chinese PDF font
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes fonts-noto-cjk
+          test -x "$REPORT_BROWSER_PATH"
+          test -f "$REPORT_FONT_PATH"
+      - name: Install dependencies
+        run: npm ci
+      - name: Initialize database twice
+        run: |
+          npm run db:init
+          npm run db:init
+      - name: Import the local knowledge base
+        run: npm run import:knowledge-base
+      - name: Seed the base question bank required by integration tests
+        run: npm run seed:base-questions
+      - name: Run backend tests
+        run: npm test
+
+  demo-lifecycle:
+    name: Demo lifecycle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      mysql:
+        image: mysql:8.4.10
+        env:
+          MYSQL_DATABASE: learnmate_demo_ci
+          MYSQL_ROOT_PASSWORD: ci_mysql_root_password
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      PORT: "5800"
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+      DB_USER: root
+      DB_PASSWORD: ci_mysql_root_password
+      DB_NAME: learnmate_demo_ci
+      JWT_SECRET: ci-only-jwt-secret-with-at-least-thirty-two-characters
+      JWT_EXPIRES_IN: 1h
+      DEMO_PASSWORD: ci-only-demo-password
+      SEED_DEMO_DATA: "false"
+      KNOWLEDGE_IMPORT_ON_START: "false"
+      AI_ENABLED: "false"
+      PATH_PLANNER_AI_ENABLED: "false"
+      MULTIMODAL_RESOURCE_AI_ENABLED: "false"
+      MULTIMODAL_REVIEW_AI_ENABLED: "false"
+      SPARK_API_KEY: ""
+      SPARK_APP_ID: ""
+      SPARK_API_SECRET: ""
+      CORS_ALLOWED_ORIGINS: http://localhost:8080,http://localhost:8081
+      RESOURCE_STORAGE_DIR: /tmp/learnmate/demo-lifecycle/resources
+      REPORT_STORAGE_DIR: /tmp/learnmate/demo-lifecycle/reports
+      REPORT_BROWSER_PATH: /usr/bin/google-chrome
+      REPORT_FONT_PATH: /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
+      DB_INIT_MAX_ATTEMPTS: "20"
+      DB_INIT_RETRY_MS: "1000"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install Chinese PDF font
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes fonts-noto-cjk
+          test -x "$REPORT_BROWSER_PATH"
+          test -f "$REPORT_FONT_PATH"
+      - name: Install dependencies
+        run: npm ci
+      - name: Initialize database twice
+        run: |
+          npm run db:init
+          npm run db:init
+      - name: Import the local knowledge base
+        run: npm run import:knowledge-base
+      - name: Seed twice and verify competition demo data
+        run: |
+          npm run demo:seed
+          npm run demo:seed
+          npm run demo:verify
+      - name: Verify reset safety guards
+        run: |
+          if DEMO_RESET_CONFIRM= npm run demo:reset; then
+            echo "Demo reset unexpectedly succeeded without confirmation."
+            exit 1
+          fi
+          if NODE_ENV=production DEMO_RESET_CONFIRM=RESET_LEARNMATE_DEMO npm run demo:reset; then
+            echo "Demo reset unexpectedly succeeded in production."
+            exit 1
+          fi
+      - name: Reset, reseed, and verify competition demo data
+        env:
+          DEMO_RESET_CONFIRM: RESET_LEARNMATE_DEMO
+        run: |
+          npm run demo:reset
+          npm run demo:verify
+
+  student-frontend:
+    name: Student frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend-new
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend-new/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Build
+        run: npm run build
+
+  teacher-frontend:
+    name: Teacher frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend-teacher
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend-teacher/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Build
+        run: npm run build
+
+  repository-safety:
+    name: Repository safety
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check tracked files and production source
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git diff --check
+          if [[ "$EVENT_NAME" == "pull_request" && "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            git diff --check "$BASE_SHA...$CURRENT_SHA"
+          elif [[ "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ && ! "$BEFORE_SHA" =~ ^0+$ ]] && git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            git diff --check "$BEFORE_SHA..$CURRENT_SHA"
+          else
+            git show --check --format=oneline --no-renames "$CURRENT_SHA" >/dev/null
+          fi
+
+          tracked_env="$(git ls-files | grep -E '(^|/)\.env($|\.)' | grep -Ev '(^|/)\.env(\.docker)?\.example$' || true)"
+          if [[ -n "$tracked_env" ]]; then
+            echo "Tracked environment files are forbidden:"
+            echo "$tracked_env"
+            exit 1
+          fi
+
+          tracked_dependencies="$(git ls-files | grep -E '(^|/)node_modules/' || true)"
+          tracked_builds="$(git ls-files | grep -E '(^|/)dist/' || true)"
+          tracked_private_files="$(git ls-files '*.pdf' '*.pptx' || true)"
+          if [[ -n "$tracked_dependencies$tracked_builds$tracked_private_files" ]]; then
+            echo "Tracked dependencies, build output, PDF, or PPTX files are forbidden."
+            printf '%s\n%s\n%s\n' "$tracked_dependencies" "$tracked_builds" "$tracked_private_files"
+            exit 1
+          fi
+
+          nested_git="$(find . -mindepth 2 -name .git -print -quit)"
+          if [[ -n "$nested_git" ]]; then
+            echo "Nested Git metadata is forbidden: $nested_git"
+            exit 1
+          fi
+
+          legacy_ai_pattern='GEMINI''_API_KEY|Google''GenAI|@google/genai'
+          if git grep -n -I -E "$legacy_ai_pattern" -- backend frontend-new frontend-teacher; then
+            echo "Forbidden legacy Gemini integration remains in the repository."
+            exit 1
+          fi
+
+          dangerous_render_pattern='dangerouslySet''InnerHTML'
+          if git grep -n -I -E "$dangerous_render_pattern" -- backend/src frontend-new/src frontend-teacher/src; then
+            echo "Unsafe rendering remains in production source."
+            exit 1
+          fi
+
+          mock_pattern='mock''Data|initial''Resources|initial''ActiveQuizzes|initial''Weaknesses|initial''AgentLogs|totalStudents[[:space:]]*=[[:space:]]*32|王博''远|高保真''模拟|模拟''沙箱|深度思考''流|实时编译''提交流'
+          if git grep -n -I -E "$mock_pattern" -- backend/src frontend-new/src frontend-teacher/src; then
+            echo "Known mock business code remains in production source."
+            exit 1
+          fi
+      - name: Scan Git history for secrets
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_ENABLE_COMMENTS: "false"
+
+  docker-build:
+    name: Docker image builds
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Build backend image
+        run: docker build --file backend/Dockerfile --tag learnmate-backend:ci backend
+      - name: Build student frontend image
+        run: docker build --file frontend-new/Dockerfile --tag learnmate-student-web:ci frontend-new
+      - name: Build teacher frontend image
+        run: docker build --file frontend-teacher/Dockerfile --tag learnmate-teacher-web:ci frontend-teacher

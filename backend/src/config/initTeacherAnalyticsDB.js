@@ -1,4 +1,5 @@
-const bcrypt = require("bcryptjs");
+const { ensureDemoAccount } = require("../services/demoAccountService");
+const { normalizeNodeEnv } = require("./runtimeConfig");
 const crypto = require("crypto");
 
 async function ensureColumn(pool, table, column, definition) {
@@ -50,7 +51,6 @@ async function initTeacherAnalyticsDB(pool) {
   await ensureColumn(pool, "agent_run_logs", "resource_id", "BIGINT UNSIGNED NULL");
   await ensureColumn(pool, "agent_run_logs", "path_version", "INT NULL");
   await repairReportFingerprints(pool);
-  await seedTeacherDemo(pool);
 }
 
 async function repairReportFingerprints(pool) {
@@ -74,21 +74,24 @@ function canonicalJson(value) {
 
 async function seedTeacherDemo(pool) {
   const password = String(process.env.DEMO_PASSWORD || "").trim();
-  if (!password) {
-    console.warn("未设置 DEMO_PASSWORD，跳过教师演示账号初始化。");
-    return;
+  const minimumLength = normalizeNodeEnv(process.env.NODE_ENV) === "production" ? 12 : 6;
+  if (password.length < minimumLength || /^change[-_ ]?me/i.test(password) || password.startsWith("请设置")) {
+    throw new Error(`DEMO_PASSWORD must contain at least ${minimumLength} non-placeholder characters before seeding the demo teacher`);
   }
-  const hash = await bcrypt.hash(password, 10);
-  await pool.query(`INSERT INTO users (student_no,username,display_name,password_hash,role)
-    VALUES ('TEACHER-DEMO','teacher_demo','演示教师',?,'TEACHER')
-    ON DUPLICATE KEY UPDATE display_name=VALUES(display_name),password_hash=VALUES(password_hash),role='TEACHER'`, [hash]);
-  const [[teacher]] = await pool.query("SELECT id FROM users WHERE username='teacher_demo' LIMIT 1");
+  await ensureDemoAccount(pool, {
+    studentNo: "TEACHER-DEMO",
+    username: "teacher_demo",
+    displayName: "演示教师",
+    role: "TEACHER",
+    password
+  });
+  const [[teacher]] = await pool.query("SELECT id FROM users WHERE username='teacher_demo' AND is_demo=1 LIMIT 1");
   if (!teacher) return;
   await pool.query(`INSERT INTO teacher_classes (teacher_id,class_name,subject,description,status)
     VALUES (?,'数据结构演示班','数据结构','LearnMate 教师端演示班级','active')
     ON DUPLICATE KEY UPDATE subject=VALUES(subject),description=VALUES(description),status='active'`, [teacher.id]);
   const [[classRow]] = await pool.query("SELECT id FROM teacher_classes WHERE teacher_id=? AND class_name='数据结构演示班'", [teacher.id]);
-  const [students] = await pool.query("SELECT id FROM users WHERE username IN ('zhangsan','lisi') AND COALESCE(role,'STUDENT')='STUDENT'");
+  const [students] = await pool.query("SELECT id FROM users WHERE username IN ('zhangsan','lisi') AND is_demo=1 AND COALESCE(role,'STUDENT')='STUDENT'");
   for (const student of students) {
     await pool.query(`INSERT INTO teacher_class_students (class_id,teacher_id,student_id,status)
       VALUES (?,?,?,'active') ON DUPLICATE KEY UPDATE teacher_id=VALUES(teacher_id),status='active'`,

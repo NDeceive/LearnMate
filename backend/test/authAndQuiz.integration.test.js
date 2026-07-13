@@ -1,31 +1,45 @@
 require("dotenv").config({ quiet: true });
+const fs = require("fs/promises");
+const os = require("os");
+const path = require("path");
+const mysql = require("mysql2/promise");
+
+const suffix = `${Date.now()}_${process.pid}`;
+const databaseName = `learnmate_auth_quiz_test_${suffix}`;
+const storageRoot = path.join(os.tmpdir(), `learnmate-auth-quiz-${suffix}`);
+const demoPassword = "test-only-demo-password";
+
+process.env.NODE_ENV = "test";
+process.env.DB_NAME = databaseName;
+process.env.DEMO_PASSWORD = demoPassword;
 process.env.JWT_SECRET = "test-only-secret-with-more-than-32-characters";
+process.env.AI_ENABLED = "false";
+process.env.PATH_PLANNER_AI_ENABLED = "false";
+process.env.MULTIMODAL_RESOURCE_AI_ENABLED = "false";
+process.env.MULTIMODAL_REVIEW_AI_ENABLED = "false";
+process.env.RESOURCE_STORAGE_DIR = path.join(storageRoot, "resources");
+process.env.REPORT_STORAGE_DIR = path.join(storageRoot, "reports");
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const request = require("supertest");
 const app = require("../src/app");
-const { pool } = require("../src/config/db");
-const { initLearningPathDB } = require("../src/config/initLearningPathDB");
-const { seedRedBlackTreeDemo } = require("../src/config/initLearningProfileDB");
-const { initLearningResourceDB } = require("../src/config/initLearningResourceDB");
+const { pool, databaseConfig } = require("../src/config/db");
+const { initDB } = require("../src/config/initDB");
+const { seedCompetitionDemo } = require("../src/services/competitionDemoService");
 const { createOrAdjustLearningPath } = require("../src/services/learningPathService");
 
 let zhangToken;
 let liToken;
-const testStartedAt = new Date(Date.now() - 2000);
-const previousPathVersions = new Map();
 
 test.before(async () => {
-  await initLearningPathDB(pool);
-  await initLearningResourceDB(pool);
-  await seedRedBlackTreeDemo(pool);
-  const [rows] = await pool.query("SELECT student_id, current_version FROM student_learning_paths");
-  for (const row of rows) previousPathVersions.set(Number(row.student_id), Number(row.current_version));
+  await fs.mkdir(storageRoot, { recursive: true });
+  assert.equal(await initDB(), true);
+  await seedCompetitionDemo();
 });
 
 test("正确账号密码可以登录", async () => {
-  const response = await request(app).post("/api/auth/login").send({ identifier: "zhangsan", password: "123456" });
+  const response = await request(app).post("/api/auth/login").send({ identifier: "zhangsan", password: demoPassword });
   assert.equal(response.status, 200);
   assert.ok(response.body.token);
   zhangToken = response.body.token;
@@ -42,7 +56,7 @@ test("未认证不能读取画像", async () => {
 });
 
 test("不同学生读取到隔离的画像数据", async () => {
-  const login = await request(app).post("/api/auth/login").send({ identifier: "lisi", password: "123456" });
+  const login = await request(app).post("/api/auth/login").send({ identifier: "lisi", password: demoPassword });
   liToken = login.body.token;
   const [zhang, li] = await Promise.all([
     request(app).get("/api/profile/me").set("Authorization", `Bearer ${zhangToken}`),
@@ -134,17 +148,19 @@ test("重复生成不产生无意义版本，V1/V2 历史来自数据库", async
 
 test("结构发生真实变化时创建 V2，版本差异由数据库快照计算", async () => {
   const [[zhang]] = await pool.query("SELECT id FROM users WHERE username='zhangsan'");
-  const [[current]] = await pool.query("SELECT snapshot_json FROM learning_path_versions WHERE student_id=? ORDER BY version DESC LIMIT 1", [zhang.id]);
+  const [[current]] = await pool.query("SELECT version,snapshot_json FROM learning_path_versions WHERE student_id=? ORDER BY version DESC LIMIT 1", [zhang.id]);
   const candidate = typeof current.snapshot_json === "string" ? JSON.parse(current.snapshot_json) : current.snapshot_json;
-  assert.ok(candidate.stages.length >= 2);
+  assert.ok(candidate.stages.length >= 1);
   const first = candidate.stages[0];
-  const second = candidate.stages[1];
-  candidate.stages[0] = { ...second, key: first.key, dependsOn: first.dependsOn };
-  candidate.stages[1] = { ...first, key: second.key, dependsOn: second.dependsOn };
+  const completion = first.completion?.type === "resource"
+    ? { type: "quiz", ids: [first.questionIds[0]] }
+    : { type: "resource", ids: ["mind_map"] };
+  candidate.stages[0] = { ...first, completion };
   const adjusted = await createOrAdjustLearningPath({ studentId: zhang.id, reason: "测试真实结构调整", sourceType: "test", candidateOverride: candidate });
+  assert.equal(adjusted.version, Number(current.version) + 1);
   const history = await request(app).get("/api/path/versions").set("Authorization", `Bearer ${zhangToken}`);
   assert.equal(history.body.data[0].version, adjusted.version);
-  assert.ok(history.body.data[0].diff.changed.length >= 2);
+  assert.ok(history.body.data[0].diff.changed.length >= 1);
 });
 
 test("非法调整回滚且旧路径版本继续有效", async () => {
@@ -160,38 +176,18 @@ test("非法调整回滚且旧路径版本继续有效", async () => {
 });
 
 test.after(async () => {
-  const [[zhang]] = await pool.query("SELECT id FROM users WHERE username='zhangsan'");
-  const [[li]] = await pool.query("SELECT id FROM users WHERE username='lisi'");
-  if (zhang) {
-    const [attempts] = await pool.query("SELECT id FROM quiz_attempts WHERE student_id=? AND idempotency_key LIKE 'integration-%'", [zhang.id]);
-    const ids = attempts.map((item) => item.id);
-    if (ids.length) {
-      await pool.query(`DELETE FROM quiz_attempt_answers WHERE attempt_id IN (${ids.map(() => "?").join(",")})`, ids);
-      await pool.query(`DELETE FROM student_learning_events WHERE student_id=? AND event_type='quiz_submitted' AND JSON_EXTRACT(payload_json,'$.attemptId') IN (${ids.map(() => "?").join(",")})`, [zhang.id, ...ids]);
-    }
-    await pool.query("DELETE FROM quiz_attempts WHERE student_id=? AND (idempotency_key LIKE 'integration-%' OR idempotency_key LIKE 'rollback-%')", [zhang.id]);
-    await pool.query("DELETE FROM wrong_questions WHERE student_id=? AND question_id='DS-RBT-ROTATE-001'", [zhang.id]);
-    await pool.query("DELETE FROM student_error_patterns WHERE student_id=? AND knowledge_point='红黑树旋转'", [zhang.id]);
-    await pool.query("UPDATE student_knowledge_mastery SET mastery=45,wrong_count=0,practice_count=0 WHERE student_id=? AND subject='数据结构' AND knowledge_point='红黑树旋转'", [zhang.id]);
-    await pool.query("DELETE FROM student_profile_versions WHERE student_id=? AND source_type='quiz_submission' AND created_at>=?", [zhang.id, testStartedAt]);
-    const [[latest]] = await pool.query("SELECT COALESCE(MAX(version),0) AS version FROM student_profile_versions WHERE student_id=?", [zhang.id]);
-    await pool.query("UPDATE student_profiles SET current_version=? WHERE student_id=?", [latest.version, zhang.id]);
+  await pool.end().catch(() => undefined);
+  const server = await mysql.createConnection({
+    host: databaseConfig.host,
+    port: databaseConfig.port,
+    user: databaseConfig.user,
+    password: databaseConfig.password,
+    charset: "utf8mb4"
+  }).catch(() => null);
+  if (server) {
+    if (!/^learnmate_auth_quiz_test_[A-Za-z0-9_]+$/.test(databaseName)) throw new Error("unsafe test database name");
+    await server.query(`DROP DATABASE IF EXISTS \`${databaseName}\``);
+    await server.end();
   }
-  if (li) {
-    await pool.query("DELETE FROM profile_dialogue_messages WHERE session_id IN (SELECT id FROM profile_dialogue_sessions WHERE student_id=? AND created_at>=?)", [li.id, testStartedAt]);
-    await pool.query("DELETE FROM profile_dialogue_sessions WHERE student_id=? AND created_at>=?", [li.id, testStartedAt]);
-    await pool.query("DELETE FROM student_profile_versions WHERE student_id=? AND source_type='dialogue_confirmation' AND created_at>=?", [li.id, testStartedAt]);
-    await pool.query("DELETE FROM student_profiles WHERE student_id=?", [li.id]);
-    await pool.query("DELETE FROM student_learning_events WHERE student_id=? AND event_type='profile_confirmed' AND created_at>=?", [li.id, testStartedAt]);
-  }
-  for (const student of [zhang, li].filter(Boolean)) {
-    await pool.query("DELETE FROM learning_path_adjustment_events WHERE student_id=? AND created_at>=?", [student.id, testStartedAt]);
-    await pool.query("DELETE FROM learning_path_versions WHERE student_id=? AND created_at>=?", [student.id, testStartedAt]);
-    if (previousPathVersions.has(Number(student.id))) {
-      await pool.query("UPDATE student_learning_paths SET current_version=? WHERE student_id=?", [previousPathVersions.get(Number(student.id)), student.id]);
-    } else {
-      await pool.query("DELETE FROM student_learning_paths WHERE student_id=?", [student.id]);
-    }
-  }
-  await pool.end();
+  await fs.rm(storageRoot, { recursive: true, force: true });
 });

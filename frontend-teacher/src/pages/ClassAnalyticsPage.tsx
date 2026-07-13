@@ -17,52 +17,25 @@ import {
 } from "recharts";
 import { teacherApi } from "../api/teacher";
 import { Metric, PageTitle, State, pct } from "../components/Ui";
-export function ClassesPage() {
-  const [data, setData] = useState<any[]>([]),
-    [error, setError] = useState("");
-  useEffect(() => {
-    setData(undefined);
-    setError("");
-    teacherApi
-      .classes()
-      .then((r) => setData(r.data))
-      .catch((e) => setError(e.message));
-  }, []);
-  return (
-    <>
-      <PageTitle title="班级学情" description="选择当前账号有权访问的班级" />
-      <State
-        loading={!data.length && !error}
-        error={error}
-        empty={!data.length}
-      >
-        <div className="grid gap-4 md:grid-cols-2">
-          {data.map((item) => (
-            <a
-              key={item.id}
-              href={`/classes/${item.id}/analytics`}
-              className="rounded-2xl border bg-white p-6 hover:border-blue-300"
-            >
-              <h2 className="font-semibold">{item.className}</h2>
-              <p className="mt-2 text-sm text-slate-500">
-                {item.subject} · {item.studentCount} 人
-              </p>
-            </a>
-          ))}
-        </div>
-      </State>
-    </>
-  );
-}
 export function ClassAnalyticsPage({ classId }: { classId: number }) {
   const [data, setData] = useState<any>(),
     [error, setError] = useState(""),
     [range, setRange] = useState("30d");
   useEffect(() => {
+    let cancelled = false;
+    setData(undefined);
+    setError("");
     teacherApi
       .classAnalytics(classId, range)
-      .then(setData)
-      .catch((e) => setError(e.message));
+      .then((result) => {
+        if (!cancelled) setData(result);
+      })
+      .catch((requestError) => {
+        if (!cancelled) setError(requestError.message);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [classId, range]);
   return (
     <>

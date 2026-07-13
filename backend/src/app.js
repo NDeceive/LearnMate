@@ -1,5 +1,7 @@
 const express = require("express");
 const cors = require("cors");
+const { createCorsOptions } = require("./config/corsConfig");
+const { requestContext, notFoundHandler, errorHandler } = require("./middleware/requestContext");
 
 const healthRoutes = require("./routes/health");
 const chatRoutes = require("./routes/chat");
@@ -17,7 +19,9 @@ const teacherRoutes = require("./routes/teacher");
 
 const app = express();
 
-app.use(cors());
+app.disable("x-powered-by");
+app.use(requestContext);
+app.use(cors(createCorsOptions()));
 app.use(express.json({ limit: "2mb" }));
 
 app.use("/api", healthRoutes);
@@ -34,13 +38,7 @@ app.use("/api", teacherRoutes);
 app.use("/api/agent-logs", agentLogRoutes);
 app.use("/api/code", codeRoutes);
 
-app.use((req, res) => {
-  res.status(404).json({ error: "Not Found" });
-});
-
-app.use((err, req, res, next) => {
-  console.error("Unhandled backend error:", err);
-  res.status(500).json({ error: "Internal Server Error" });
-});
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 module.exports = app;

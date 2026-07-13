@@ -71,7 +71,7 @@ async function loadStudentMetrics(user, { classId } = {}) {
   if (!rows.length) return [];
   const ids = rows.map((row) => Number(row.student_id));
   const [masteryRows, errorRows, pathEvidence] = await Promise.all([
-    pool.query(`SELECT student_id,subject,knowledge_point,mastery,wrong_count,practice_count,updated_at
+    pool.query(`SELECT student_id,subject,knowledge_point,mastery,wrong_count,practice_count,last_updated AS updated_at
       FROM student_knowledge_mastery WHERE student_id IN (${placeholders(ids)}) ORDER BY mastery ASC`, ids),
     pool.query(`SELECT student_id,error_type,knowledge_point,occurrence_count,confidence,last_seen_at
       FROM student_error_patterns WHERE student_id IN (${placeholders(ids)}) ORDER BY occurrence_count DESC`, ids),

@@ -1,4 +1,5 @@
-const bcrypt = require("bcryptjs");
+const { ensureDemoAccount } = require("../services/demoAccountService");
+const { normalizeNodeEnv } = require("./runtimeConfig");
 
 async function initLearningProfileDB(pool) {
   await pool.query(`
@@ -9,6 +10,7 @@ async function initLearningProfileDB(pool) {
       display_name VARCHAR(100) NOT NULL,
       password_hash VARCHAR(255) NOT NULL,
       role VARCHAR(20) NOT NULL DEFAULT 'STUDENT',
+      is_demo TINYINT(1) NOT NULL DEFAULT 0,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
@@ -160,9 +162,7 @@ async function initLearningProfileDB(pool) {
 
   await ensureColumn(pool, "question_bank", "option_error_types", "JSON NULL");
   await ensureColumn(pool, "quiz_attempts", "result_json", "JSON NULL");
-  await seedDemoUsers(pool);
   await removeLegacyStudentDefaults(pool);
-  if (process.env.SEED_DEMO_DATA === "true") await seedRedBlackTreeDemo(pool);
 }
 
 async function ensureColumn(pool, table, column, definition) {
@@ -177,14 +177,17 @@ async function ensureLegacyUsersCompatibility(pool) {
   await ensureColumn(pool, "users", "display_name", "VARCHAR(100) NULL");
   await ensureColumn(pool, "users", "password_hash", "VARCHAR(255) NULL");
   await ensureColumn(pool, "users", "role", "VARCHAR(20) NOT NULL DEFAULT 'STUDENT'");
+  await ensureColumn(pool, "users", "is_demo", "TINYINT(1) NOT NULL DEFAULT 0");
   const [legacyPassword] = await pool.query("SHOW COLUMNS FROM users LIKE 'password'");
   if (legacyPassword.length) await pool.query("ALTER TABLE users MODIFY COLUMN password VARCHAR(255) NULL");
   const [legacyRealName] = await pool.query("SHOW COLUMNS FROM users LIKE 'real_name'");
   if (legacyRealName.length) await pool.query("ALTER TABLE users MODIFY COLUMN real_name VARCHAR(100) NULL");
   await pool.query(`UPDATE users SET student_no = CONCAT('LEGACY-', id) WHERE student_no IS NULL OR student_no = ''`);
-  await pool.query(`UPDATE users SET display_name = COALESCE(NULLIF(real_name, ''), username) WHERE display_name IS NULL OR display_name = ''`).catch(async () => {
+  if (legacyRealName.length) {
+    await pool.query(`UPDATE users SET display_name = COALESCE(NULLIF(real_name, ''), username) WHERE display_name IS NULL OR display_name = ''`);
+  } else {
     await pool.query(`UPDATE users SET display_name = username WHERE display_name IS NULL OR display_name = ''`);
-  });
+  }
   await ensureNamedIndex(pool, "users", "uq_users_student_no", "ALTER TABLE users ADD UNIQUE KEY uq_users_student_no (student_no)");
 }
 
@@ -213,37 +216,31 @@ async function ensureNamedIndex(pool, table, name, ddl) {
 }
 
 async function removeLegacyStudentDefaults(pool) {
-  const [owners] = await pool.query("SELECT id FROM users ORDER BY id LIMIT 1");
   for (const table of ["wrong_questions", "student_knowledge_mastery", "code_submissions"]) {
-    try {
-      if (owners[0]) await pool.query(`UPDATE \`${table}\` SET student_id = ? WHERE student_id IS NULL`, [owners[0].id]);
-      await pool.query(`ALTER TABLE \`${table}\` MODIFY COLUMN student_id INT NOT NULL`);
-    } catch (error) {
-      console.warn(`移除 ${table}.student_id 默认值失败：${error.message}`);
+    const [[unowned]] = await pool.query(`SELECT COUNT(*) count FROM \`${table}\` WHERE student_id IS NULL`);
+    if (Number(unowned.count) > 0) {
+      const error = new Error(`${table}.student_id contains ${Number(unowned.count)} unowned rows; migration stopped to avoid assigning private data to an arbitrary user`);
+      error.code = "UNOWNED_STUDENT_DATA";
+      throw error;
     }
+    await pool.query(`ALTER TABLE \`${table}\` MODIFY COLUMN student_id INT NOT NULL`);
   }
 }
 
 async function seedDemoUsers(pool) {
   const password = String(process.env.DEMO_PASSWORD || "").trim();
-  if (!password || password.startsWith("请设置")) {
-    console.warn("未设置 DEMO_PASSWORD，跳过演示账号初始化。");
-    return;
+  const minimumLength = normalizeNodeEnv(process.env.NODE_ENV) === "production" ? 12 : 6;
+  if (password.length < minimumLength || password.startsWith("请设置") || /^change[-_ ]?me/i.test(password)) {
+    throw new Error(`DEMO_PASSWORD must contain at least ${minimumLength} non-placeholder characters before seeding demo users`);
   }
 
-  const hash = await bcrypt.hash(password, 10);
   const users = [
     ["20260001", "zhangsan", "张同学"],
     ["20260002", "lisi", "李同学"],
     ["20260003", "wangwu", "王同学"]
   ];
   for (const [studentNo, username, displayName] of users) {
-    await pool.query(
-      `INSERT INTO users (student_no, username, display_name, password_hash)
-       VALUES (?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE student_no = VALUES(student_no), display_name = VALUES(display_name), password_hash = VALUES(password_hash)`,
-      [studentNo, username, displayName, hash]
-    );
+    await ensureDemoAccount(pool, { studentNo, username, displayName, role: "STUDENT", password });
   }
 }
 
@@ -273,7 +270,7 @@ async function seedRedBlackTreeDemo(pool) {
     ]
   );
 
-  const [users] = await pool.query("SELECT id FROM users WHERE username = 'zhangsan' LIMIT 1");
+  const [users] = await pool.query("SELECT id FROM users WHERE username = 'zhangsan' AND is_demo=1 LIMIT 1");
   if (users[0]) {
     const studentId = users[0].id;
     await pool.query(
@@ -327,4 +324,4 @@ async function seedRedBlackTreeDemo(pool) {
   }
 }
 
-module.exports = { initLearningProfileDB, seedRedBlackTreeDemo };
+module.exports = { initLearningProfileDB, seedDemoUsers, seedRedBlackTreeDemo };

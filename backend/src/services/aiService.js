@@ -19,6 +19,9 @@ function isWebSocketUrl(url) {
 }
 
 function isAIEnabled() {
+  if (!/^true$/i.test(String(process.env.AI_ENABLED || "").trim())) {
+    return false;
+  }
   const config = getSparkConfig();
 
   if (!config.apiUrl) {

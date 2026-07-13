@@ -1,22 +1,23 @@
-import React, { useEffect, useState } from "react";
+import React, { lazy, Suspense, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { UserProfile, Course, WeakPoint, ErrorRecord, QuizQuestion } from "./types";
-import { initialCourses } from "./mockData";
+import type { UserProfile, Course, WeakPoint, ErrorRecord, QuizQuestion } from "./types";
 
 // Views
 import Portal from "./components/Portal";
-import Dashboard from "./components/Dashboard";
-import QuizView from "./components/QuizView";
-import MentorView from "./components/MentorView";
-import ResourceView from "./components/ResourceView";
-import PathView from "./components/PathView";
-import ErrorView from "./components/ErrorView";
 import FocusTimer from "./components/FocusTimer";
-import KnowledgeGraph from "./components/KnowledgeGraph";
-import CodeLabView from "./components/CodeLabView";
-import SimplePlaceholderView from "./components/SimplePlaceholderView";
-import ProfileView from "./components/ProfileView";
-import { apiRequest, clearAuth, getStoredUser, login as loginRequest, type AuthUser, type ProfileResponse } from "./api";
+import ChunkErrorBoundary from "./components/ChunkErrorBoundary";
+import { apiRequest, AUTH_UNAUTHORIZED_EVENT, clearAuth, getAuthToken, getCurrentUser, login as loginRequest, type AuthUser, type ProfileResponse } from "./api";
+
+const Dashboard = lazy(() => import("./components/Dashboard"));
+const QuizView = lazy(() => import("./components/QuizView"));
+const MentorView = lazy(() => import("./components/MentorView"));
+const ResourceView = lazy(() => import("./components/ResourceView"));
+const PathView = lazy(() => import("./components/PathView"));
+const ErrorView = lazy(() => import("./components/ErrorView"));
+const KnowledgeGraph = lazy(() => import("./components/KnowledgeGraph"));
+const CodeLabView = lazy(() => import("./components/CodeLabView"));
+const SimplePlaceholderView = lazy(() => import("./components/SimplePlaceholderView"));
+const ProfileView = lazy(() => import("./components/ProfileView"));
 
 import {
   Award,
@@ -117,13 +118,14 @@ function buildStudentUrl(tab: string, prefillData?: any) {
 }
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getStoredUser());
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(() => Boolean(getAuthToken()));
   const isLoggedIn = Boolean(currentUser);
   const studentName = currentUser?.displayName || "同学";
 
   // Core Global States
   const [profile, setProfile] = useState<UserProfile>({ name: "同学", proficiency: 0, totalHours: 0, completionRate: 0, knowledgeCoverage: 0, streak: 0, testsTaken: 0, pendingTasks: 0, weakPointsCount: 0, extraPoints: 0 });
-  const [courses, setCourses] = useState<Course[]>(initialCourses);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [weakPoints, setWeakPoints] = useState<WeakPoint[]>([]);
   const [errorRecords, setErrorRecords] = useState<ErrorRecord[]>([]);
 
@@ -138,6 +140,7 @@ export default function App() {
   const handleLogin = async (identifier: string, password: string) => {
     const result = await loginRequest(identifier, password);
     setCurrentUser(result.user);
+    setAuthLoading(false);
     setProfile((prev) => ({ ...prev, name: result.user.displayName }));
     const learningProfile = await apiRequest<ProfileResponse>("/api/profile/me");
     if (learningProfile.version === 0 || learningProfile.completeness < 1) {
@@ -161,6 +164,34 @@ export default function App() {
   };
 
   useEffect(() => {
+    let cancelled = false;
+    const leaveAuthenticatedShell = () => {
+      clearAuth();
+      if (cancelled) return;
+      setCurrentUser(null);
+      setAuthLoading(false);
+      window.history.replaceState(null, "", TAB_PATHS.dashboard);
+    };
+    window.addEventListener(AUTH_UNAUTHORIZED_EVENT, leaveAuthenticatedShell);
+    if (!getAuthToken()) {
+      setAuthLoading(false);
+    } else {
+      getCurrentUser()
+        .then((user) => {
+          if (!cancelled) setCurrentUser(user);
+        })
+        .catch(leaveAuthenticatedShell)
+        .finally(() => {
+          if (!cancelled) setAuthLoading(false);
+        });
+    }
+    return () => {
+      cancelled = true;
+      window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, leaveAuthenticatedShell);
+    };
+  }, []);
+
+  useEffect(() => {
     setProfile((prev) => ({ ...prev, name: studentName }));
   }, [studentName]);
 
@@ -171,11 +202,20 @@ export default function App() {
       const average = mastery.length ? Math.round(mastery.reduce((sum, item) => sum + item.mastery, 0) / mastery.length) : 0;
       setProfile((prev) => ({ ...prev, name: currentUser.displayName, proficiency: average, knowledgeCoverage: average, weakPointsCount: mastery.filter((item) => item.mastery < 60).length, testsTaken: mastery.reduce((sum, item) => sum + item.practiceCount, 0) }));
       setWeakPoints(mastery.filter((item) => item.mastery < 60).map((item, index) => ({ id: `api-${index}`, name: item.knowledgePoint, level: item.mastery < 40 ? "High" : "Medium", count: item.wrongCount, course: item.subject, remediationProgress: item.mastery })));
-      setCourses((current) => current.map((course) => {
-        const subject = course.name === "数据结构与算法" ? "数据结构" : course.name.replace(/\s+/g, " ");
-        const records = mastery.filter((item) => item.subject.replace(/\s+/g, " ") === subject);
-        return records.length ? { ...course, proficiency: Math.round(records.reduce((sum, item) => sum + item.mastery, 0) / records.length) } : course;
-      }));
+      const bySubject = new Map<string, typeof mastery>();
+      mastery.forEach((item) => {
+        const subject = item.subject.trim() || "未分类课程";
+        bySubject.set(subject, [...(bySubject.get(subject) || []), item]);
+      });
+      setCourses(Array.from(bySubject.entries()).map(([subject, records], index) => ({
+        id: `subject-${encodeURIComponent(subject)}`,
+        name: subject,
+        code: `COURSE-${index + 1}`,
+        proficiency: Math.round(records.reduce((sum, item) => sum + item.mastery, 0) / records.length),
+        totalHours: 0,
+        completionRate: 0,
+        color: ["blue", "sky", "emerald", "rose"][index % 4]
+      })));
     }).catch(() => undefined);
   }, [currentUser]);
 
@@ -236,7 +276,7 @@ export default function App() {
     if (errorRecords.some((rec) => rec.question === question.question)) return;
 
     const newRecord: ErrorRecord = {
-      id: "err-dyn-" + Math.random().toString(36).substr(2, 9),
+      id: `err-${crypto.randomUUID()}`,
       title: `${question.domain} 专项测验偏误：${question.question.substring(0, 15)}...`,
       course: question.domain,
       question: question.question,
@@ -297,6 +337,10 @@ export default function App() {
       ...updates
     }));
   };
+
+  if (authLoading) {
+    return <div className="min-h-screen grid place-items-center bg-slate-50 text-sm text-slate-500">正在恢复登录状态…</div>;
+  }
 
   if (!isLoggedIn) {
     return <Portal onLogin={handleLogin} />;
@@ -557,6 +601,8 @@ export default function App() {
       {/* 4. Right Side Content Container */}
       <div className="flex-1 flex flex-col lg:pl-64 min-h-screen overflow-y-auto">
         <main className="flex-grow max-w-7xl w-full mx-auto px-4 py-6 md:px-8">
+        <ChunkErrorBoundary resetKey={currentPath}>
+        <Suspense fallback={<div className="rounded-2xl border border-slate-100 bg-white p-8 text-center text-sm text-slate-500">正在加载页面…</div>}>
         {activeTab === "dashboard" && (
           <Dashboard
             profile={profile}
@@ -641,6 +687,8 @@ export default function App() {
             onAction={() => handleNavigateToTab("analytics")}
           />
         )}
+        </Suspense>
+        </ChunkErrorBoundary>
       </main>
 
       {/* 3. Global Footer */}

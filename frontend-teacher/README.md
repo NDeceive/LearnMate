@@ -4,9 +4,11 @@
 
 ## 配置与运行
 
-1. 复制 `.env.example` 为本地环境文件并按部署地址设置 `VITE_API_BASE_URL`。
-2. 执行 `npm install`。
-3. 开发：`npm run dev`；类型检查：`npm run lint`；构建：`npm run build`。
+1. 安装 Node.js 24 LTS，并按需复制 `.env.example`。
+2. 执行 `npm ci`。
+3. 执行 `npm run dev`，默认访问 `http://localhost:5174`；类型检查：`npm run lint`；构建：`npm run build`。
+
+开发服务器将同源 `/api` 代理到 `VITE_DEV_API_PROXY_TARGET`（默认 `http://localhost:5800`）。正式容器由 Nginx 提供静态文件和同源 API 代理；禁止在任何 `VITE_*` 变量中配置服务端密钥。
 
 教师与管理员均通过 LearnMate 的 `/api/auth/login` 登录。教师账号由后端 `DEMO_PASSWORD` 或正式账号管理流程创建；本目录不保存密码、Gemini 密钥或业务后端。
 

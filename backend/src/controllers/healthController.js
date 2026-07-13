@@ -1,11 +1,12 @@
-const { isAIEnabled } = require("../services/aiService");
+const { getSystemHealth } = require("../services/healthService");
 
-function getHealth(req, res) {
-  res.json({
-    status: "ok",
-    message: "计智引擎后端运行正常",
-    aiEnabled: isAIEnabled()
-  });
+async function getHealth(req, res, next) {
+  try {
+    const result = await getSystemHealth();
+    return res.status(result.statusCode).json(result.body);
+  } catch (error) {
+    return next(error);
+  }
 }
 
 module.exports = {
