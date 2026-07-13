@@ -1,5 +1,53 @@
 import React from "react";
 import type { Citation } from "../knowledge/CitationPanel";
-export default function PptxPreview({ content, citations = [] }: { content: { slides?: Array<Record<string, unknown>>; references?: Array<Record<string, string>> }; citations?: Citation[] }) {
-  return <div className="grid gap-3 md:grid-cols-2">{(content.slides || []).map((slide, index) => { const ids = Array.isArray(slide.citations) ? slide.citations.map(Number) : []; const labels = citations.filter((item) => ids.includes(item.chunkId)).map((item) => `[${item.label}]`).join(""); return <div key={index} className="relative aspect-video rounded-xl border bg-gradient-to-br from-blue-50 to-white p-4 pb-8 shadow-sm"><span className="text-[10px] text-slate-400">SLIDE {index + 1}</span><h4 className="mt-2 font-bold text-blue-900">{String(slide.title || "")}</h4><p className="mt-3 line-clamp-5 whitespace-pre-wrap text-xs text-slate-600">{Array.isArray(slide.bullets) ? slide.bullets.join("\n") : String(slide.body || slide.subtitle || slide.explanation || "")}</p><span className="absolute bottom-2 right-3 text-[10px] font-bold text-blue-700">{labels}</span></div>; })}{content.references?.length ? <div className="aspect-video rounded-xl border bg-slate-50 p-4 shadow-sm"><span className="text-[10px] text-slate-400">REFERENCE</span><h4 className="mt-2 font-bold text-blue-900">参考资料</h4><div className="mt-3 space-y-1 text-[10px] text-slate-600">{content.references.map((reference, index) => <p key={`${reference.sourceKey}-${index}`}>{index + 1}. {reference.title} · {reference.chapter}{reference.section ? ` / ${reference.section}` : ""} · V{reference.version} · {reference.license}</p>)}</div></div> : null}</div>;
+import CodeSlide from "./ppt/CodeSlide";
+import ComparisonSlide from "./ppt/ComparisonSlide";
+import ConceptSlide from "./ppt/ConceptSlide";
+import ExampleSlide from "./ppt/ExampleSlide";
+import MisconceptionSlide from "./ppt/MisconceptionSlide";
+import NextStepsSlide from "./ppt/NextStepsSlide";
+import ObjectivesSlide from "./ppt/ObjectivesSlide";
+import ProcessSlide from "./ppt/ProcessSlide";
+import QuizSlide from "./ppt/QuizSlide";
+import ReferencesSlide from "./ppt/ReferencesSlide";
+import SummarySlide from "./ppt/SummarySlide";
+import TitleSlide from "./ppt/TitleSlide";
+import type { Personalization, PptSlide, PptTheme } from "./ppt/types";
+import { expandSlides, inferPersonalization, resolveTheme, strings, text } from "./ppt/types";
+
+interface PptxContent { theme?: unknown; slides?: Array<Record<string, unknown>>; references?: Array<Record<string, string>> }
+interface SlideProps { key?: React.Key; slide: PptSlide; theme: PptTheme; page: number; citationLabels?: string; personalization: Personalization }
+
+function SlideByType(props: SlideProps) {
+  const base = { slide: props.slide, theme: props.theme, page: props.page, citationLabels: props.citationLabels };
+  switch (text(props.slide.slideType, "concept")) {
+    case "title": return <TitleSlide {...base} personalization={props.personalization}/>;
+    case "objectives": return <ObjectivesSlide {...base}/>;
+    case "process": return <ProcessSlide {...base}/>;
+    case "comparison": return <ComparisonSlide {...base}/>;
+    case "misconception": case "misconceptions": return <MisconceptionSlide {...base}/>;
+    case "example": return <ExampleSlide {...base}/>;
+    case "code": return <CodeSlide {...base}/>;
+    case "quiz": return <QuizSlide {...base}/>;
+    case "summary": return <SummarySlide {...base}/>;
+    case "next_steps": return <NextStepsSlide {...base}/>;
+    default: return <ConceptSlide {...base} personalization={props.personalization}/>;
+  }
+}
+
+export default function PptxPreview({ content, citations = [] }: { content: PptxContent; citations?: Citation[] }) {
+  const theme = resolveTheme(content.theme);
+  const sourceSlides = (content.slides || []) as PptSlide[];
+  const slides = expandSlides(sourceSlides);
+  const personalization = inferPersonalization(sourceSlides);
+  const referenceGroups: Array<Array<Record<string, string>>> = [];
+  for (let index = 0; index < (content.references || []).length; index += 6) referenceGroups.push((content.references || []).slice(index, index + 6));
+  return <div className="grid min-w-0 gap-3 overflow-x-hidden sm:grid-cols-2">
+    {slides.map((slide, index) => {
+      const ids = strings(slide.citations).map(Number);
+      const labels = citations.filter((item) => ids.includes(item.chunkId)).map((item) => `[${item.label}]`).join(" ");
+      return <SlideByType key={`${text(slide.slideType)}-${index}`} slide={slide} theme={theme} page={index + 1} citationLabels={labels} personalization={personalization}/>;
+    })}
+    {referenceGroups.map((references, index) => <ReferencesSlide key={`references-${index}`} references={references} offset={index * 6} theme={theme} page={slides.length + index + 1}/>)}
+  </div>;
 }
