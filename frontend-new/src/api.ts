@@ -174,7 +174,7 @@ export interface StudentOverview {
   courses: Array<{ subject: string; mastery: number | null; practiceCount: number; wrongCount: number; knowledgePointCount: number }>;
   quiz: { attemptCount: number; averageAccuracy: number | null; correctCount: number; answerCount: number; latestAt: string | null; recent: Array<{ id: number; subject: string; score: number; correctCount: number; totalCount: number; submittedAt: string }> };
   path: null | { version: number; title: string; progress: number | null; stages: number };
-  resources: { totalCount: number; completedCount: number; inProgressCount: number; latestAt: string | null };
+  resources: { totalCount: number; completedCount: number; inProgressCount: number; latestAt: string | null; byType: ResourceTypeCounts };
   codeLab: { submissionCount: number; successCount: number; successRate: number | null; latestAt: string | null };
   recentActivities: Array<{ type: string; text: string; time: string }>;
 }
@@ -185,7 +185,7 @@ export interface StudentAssessment {
   profileVersion: number;
   evidenceSufficient: boolean;
   evidenceCount: number;
-  metrics: { overallMastery: number | null; pathProgress: number | null; completedResources: number; resourceCount: number; quiz: StudentOverview["quiz"]; codeLab: StudentOverview["codeLab"] };
+  metrics: { overallMastery: number | null; pathProgress: number | null; completedResources: number; resourceCount: number; resourcesByType: ResourceTypeCounts; quiz: StudentOverview["quiz"]; codeLab: StudentOverview["codeLab"] };
   mastery: Array<{ subject: string; knowledgePoint: string; mastery: number | null; wrongCount: number; practiceCount: number; updatedAt?: string }>;
   weaknesses: AssessmentConclusion[];
   errorPatterns: AssessmentConclusion[];
@@ -196,17 +196,93 @@ export interface StudentAssessment {
   dataSources: string[];
 }
 
+export type LearningResourceType = "study_note" | "mind_map" | "pptx" | "quiz_pack" | "code_case";
+export type ResourceReviewStatus = "approved" | "needs_revision" | "rejected";
+export type ResourceProgressStatus = "not_started" | "opened" | "in_progress" | "completed" | "completed_unverified";
+export type CodeCaseVerificationStatus = "verified" | "generated";
+
+export type ResourceTypeCounts = Record<LearningResourceType, {
+  generatedCount: number;
+  completedCount: number;
+  inProgressCount: number;
+}>;
+
+export interface QuizPackQuestion {
+  questionId: string;
+  questionType: string;
+  stem: string;
+  options: string[];
+  scoringPoints: string[];
+  correctAnswer: string;
+  analysis: string;
+  personalizedHint: string;
+  knowledgePoints: string[];
+  difficulty: "foundation" | "intermediate" | "advanced";
+}
+
+export interface QuizPackContent {
+  title: string;
+  difficultyDistribution: Record<"foundation" | "intermediate" | "advanced", number>;
+  generationBasis: string[];
+  questions: QuizPackQuestion[];
+  evidenceStatus: "sufficient";
+}
+
+export interface CodeCaseContent {
+  caseBackground: string;
+  learningObjectives: string[];
+  language: string;
+  starterCode: string;
+  tasks: string[];
+  inputDescription: string;
+  outputDescription: string;
+  testCases: Array<{ input: string; expectedOutput: string; description: string }>;
+  boundaryConditions: string[];
+  aiExplanation: string;
+  commonErrors: string[];
+  advancedChallenges: string[];
+  verificationStatus: CodeCaseVerificationStatus;
+  codeExerciseId: string | null;
+}
+
+export type LearningResourceContent = QuizPackContent | CodeCaseContent | Record<string, unknown>;
+
+export interface LearningResourceReview {
+  status: ResourceReviewStatus;
+  score: number;
+  summary: string;
+  issues: Array<{ severity?: string; category?: string; location?: string; message?: string; suggestedFix?: string }>;
+  checks: Array<{ name: string; passed: boolean; detail: string }>;
+}
+
+export interface LearningResourceProgress {
+  status: ResourceProgressStatus;
+  progressPercent: number;
+  accumulatedSeconds: number;
+  openedAt?: string | null;
+  completedAt?: string | null;
+  downloadedAt?: string | null;
+}
+
+export interface ResourceVersionSummary {
+  version: number;
+  review: LearningResourceReview;
+  contentFingerprint: string;
+  generatorSource: string;
+  modelName: string;
+  promptVersion: string;
+  createdAt: string;
+}
+
 export interface LearningResource {
   id: number; version: number; resourceType: LearningResourceType; title: string; status: string;
   subject: string; knowledgePoint: string; stageKey: string; pathVersion: number; estimatedMinutes: number;
   generationRationale: string[]; learningObjectives: string[]; targetLearnerSummary: string;
-  content: Record<string, unknown>; review: { status: string; score: number; summary: string; issues: Array<Record<string, unknown>>; checks?: Array<{name:string;passed:boolean;detail:string}> };
+  content: LearningResourceContent; review: LearningResourceReview;
   retrievalRunId?: number | null; citations?: KnowledgeCitation[];
-  progress: null | { status: string; progressPercent: number; accumulatedSeconds: number; openedAt?: string; completedAt?: string; downloadedAt?: string };
+  progress: LearningResourceProgress | null;
   createdAt: string;
 }
-
-export type LearningResourceType = "study_note" | "mind_map" | "pptx" | "quiz_pack" | "code_case";
 
 export interface KnowledgeCitation { label:string;chunkId:number;sourceKey:string;sourceTitle:string;chapter?:string;section?:string;license:string;version:string;excerpt:string;supportScore:number }
 export interface GroundedAnswerResponse { generationId?:string;retrievalRunId:number;status:"grounded"|"insufficient";answer:string;claims:Array<{text:string;chunkIds:number[]}>;citations:KnowledgeCitation[];confidence:"high"|"medium"|"low"|"insufficient";coverage:number }
@@ -379,7 +455,7 @@ export async function generateLearningResource(input: { resourceType: LearningRe
   const result=await apiRequest<{resource:LearningResource}>("/api/resources/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(input)}); return result.resource;
 }
 export async function getLearningResource(id:number,version?:number):Promise<LearningResource>{const suffix=version?`/versions/${version}`:"";const result=await apiRequest<{resource:LearningResource}>(`/api/resources/${id}${suffix}`);return result.resource;}
-export async function getResourceVersions(id:number):Promise<Array<Record<string,unknown>>>{return apiRequest<Array<Record<string,unknown>>>(`/api/resources/${id}/versions`);}
+export async function getResourceVersions(id:number):Promise<ResourceVersionSummary[]>{return apiRequest<ResourceVersionSummary[]>(`/api/resources/${id}/versions`);}
 export async function openLearningResource(id:number):Promise<LearningResource>{const r=await apiRequest<{resource:LearningResource}>(`/api/resources/${id}/open`,{method:"POST"});return r.resource;}
 export async function updateLearningResourceProgress(id:number,progressPercent:number):Promise<LearningResource>{const r=await apiRequest<{resource:LearningResource}>(`/api/resources/${id}/progress`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({progressPercent})});return r.resource;}
 export async function completeLearningResource(id:number):Promise<LearningResource>{const r=await apiRequest<{resource:LearningResource}>(`/api/resources/${id}/complete`,{method:"POST"});return r.resource;}

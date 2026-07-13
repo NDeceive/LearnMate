@@ -53,7 +53,10 @@ async function importFile({ db, root, file, report }) {
     const meta = parsed.metadata || parsed;
     const content = parsed.content || "";
     validateMetadata(meta);
-    const fileHash = sha256(raw);
+    // Git may materialize the same tracked source with CRLF on Windows and LF in
+    // Linux/containers.  A source fingerprint must describe its content, not the
+    // checkout platform, while still rejecting any real same-version change.
+    const fileHash = sourceFingerprint(raw);
     connection = await db.getConnection();
     await connection.beginTransaction();
     const [existing] = await connection.query("SELECT id,checksum_sha256 FROM knowledge_sources WHERE source_key=? AND version=?", [meta.sourceKey, meta.version]);
@@ -94,6 +97,10 @@ async function importFile({ db, root, file, report }) {
   }
 }
 
+function sourceFingerprint(raw) {
+  return sha256(String(raw).replace(/\r\n?/g, "\n"));
+}
+
 async function insertChunk({ connection, sourceId, documentId, chunk, points, chapter, report }) {
   const safety = inspectKnowledgeText(chunk.content);
   if (!safety.safe) report.promptInjectionChunks += 1;
@@ -119,4 +126,4 @@ async function insertChunk({ connection, sourceId, documentId, chunk, points, ch
   if (!linked.size) report.unlinkedChunks += 1;
 }
 
-module.exports = { importKnowledgeBase, parseFrontMatter, validateMetadata, ALLOWED_LICENSES };
+module.exports = { importKnowledgeBase, parseFrontMatter, validateMetadata, sourceFingerprint, ALLOWED_LICENSES };

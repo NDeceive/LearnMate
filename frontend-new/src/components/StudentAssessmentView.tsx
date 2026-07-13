@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, BarChart3, CheckCircle, ClipboardCheck, RefreshCw, ShieldAlert, Sparkles, Target } from "lucide-react";
-import { getStudentAssessment, type AssessmentConclusion, type StudentAssessment } from "../api";
+import { getStudentAssessment, type AssessmentConclusion, type LearningResourceType, type StudentAssessment } from "../api";
 
 const metric = (value: number | null, suffix = "") => value === null ? "证据不足" : `${value}${suffix}`;
+const resourceLabels: Record<LearningResourceType, string> = {
+  study_note: "学习笔记", mind_map: "思维导图", pptx: "PPT 课件", quiz_pack: "练习包", code_case: "代码案例"
+};
 
 export default function StudentAssessmentView({ onNavigateToTab }: { onNavigateToTab: (tab: string, data?: unknown) => void }) {
   const [data, setData] = useState<StudentAssessment | null>(null);
@@ -31,6 +34,21 @@ export default function StudentAssessmentView({ onNavigateToTab }: { onNavigateT
       <Metric label="已完成资源" value={`${data.metrics.completedResources}/${data.metrics.resourceCount}`} detail="来自资源进度记录" />
       <Metric label="测验表现" value={metric(data.metrics.quiz.averageAccuracy, "%")} detail={`${data.metrics.quiz.attemptCount} 次测验`} />
       <Metric label="CodeLab 表现" value={metric(data.metrics.codeLab.successRate, "%")} detail={`${data.metrics.codeLab.successCount}/${data.metrics.codeLab.submissionCount} 次成功`} />
+    </section>
+
+    <section className="rounded-2xl border border-slate-100 bg-white p-5">
+      <h3 className="font-bold text-sm">五类个性化资源证据</h3>
+      <p className="mt-1 text-xs text-slate-500">分别展示已生成与已验证完成数量；未验证的生成代码案例不会计入完成证据。</p>
+      <div className="mt-4 grid sm:grid-cols-2 xl:grid-cols-5 gap-3">
+        {(Object.keys(resourceLabels) as LearningResourceType[]).map((type) => {
+          const counts = data.metrics.resourcesByType[type];
+          return <div key={type} className="rounded-xl bg-slate-50 p-4 min-w-0">
+            <p className="text-xs font-bold text-slate-700">{resourceLabels[type]}</p>
+            <p className="mt-2 text-lg font-black">{counts.completedCount}/{counts.generatedCount}</p>
+            <p className="text-[10px] text-slate-400">完成 / 已生成{counts.inProgressCount ? ` · 进行中 ${counts.inProgressCount}` : ""}</p>
+          </div>;
+        })}
+      </div>
     </section>
 
     <section className="rounded-2xl border border-slate-100 bg-white p-5 space-y-4">

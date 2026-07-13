@@ -35,7 +35,7 @@ export function StudentDetailPage({ studentId }: { studentId: number }) {
             detail={data?.risk.reasons?.[0]}
           />
         </div>
-        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <div className="mt-6 grid min-w-0 gap-6 lg:grid-cols-2">
           <Panel title="当前画像">
             {data?.profile.snapshot ? (
               <div className="space-y-2 text-sm">
@@ -234,7 +234,7 @@ function Panel({
 }) {
   return (
     <section
-      className={`rounded-2xl border bg-white p-5 ${wide ? "mt-6" : ""}`}
+      className={`min-w-0 overflow-hidden rounded-2xl border bg-white p-5 ${wide ? "mt-6" : ""}`}
     >
       <h2 className="mb-4 font-semibold">{title}</h2>
       {children}

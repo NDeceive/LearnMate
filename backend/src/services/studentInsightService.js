@@ -2,6 +2,8 @@ const { pool } = require("../config/db");
 const { getCompleteProfile } = require("./studentProfileService");
 const { getCurrentLearningPath } = require("./learningPathService");
 
+const RESOURCE_TYPES = ["study_note", "mind_map", "pptx", "quiz_pack", "code_case"];
+
 async function getStudentOverview(studentId, executor = pool) {
   const id = positiveStudentId(studentId);
   const [profile, path, userResult, quizResult, resourceResult, codeResult, eventResult] = await Promise.all([
@@ -30,6 +32,7 @@ async function getStudentOverview(studentId, executor = pool) {
   const correct = sum(quizzes, "correct_count");
   const successfulCode = codeSubmissions.filter((item) => item.status === "success");
   const completedResources = resources.filter((item) => item.progress_status === "completed");
+  const resourcesByType = resourceTypeCounts(resources);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -60,7 +63,8 @@ async function getStudentOverview(studentId, executor = pool) {
       totalCount: resources.length,
       completedCount: completedResources.length,
       inProgressCount: resources.filter((item) => item.progress_status === "in_progress").length,
-      latestAt: resources[0]?.updated_at || null
+      latestAt: resources[0]?.updated_at || null,
+      byType: resourcesByType
     },
     codeLab: {
       submissionCount: codeSubmissions.length,
@@ -107,6 +111,7 @@ async function getStudentAssessment(studentId, executor = pool) {
       pathProgress: overview.path?.progress ?? null,
       completedResources: overview.resources.completedCount,
       resourceCount: overview.resources.totalCount,
+      resourcesByType: overview.resources.byType,
       quiz: overview.quiz,
       codeLab: overview.codeLab
     },
@@ -166,6 +171,17 @@ function groupCourses(mastery) {
   }));
 }
 
+function resourceTypeCounts(resources) {
+  return Object.fromEntries(RESOURCE_TYPES.map((resourceType) => {
+    const matching = resources.filter((item) => item.resource_type === resourceType);
+    return [resourceType, {
+      generatedCount: matching.length,
+      completedCount: matching.filter((item) => item.progress_status === "completed").length,
+      inProgressCount: matching.filter((item) => item.progress_status === "in_progress").length
+    }];
+  }));
+}
+
 function buildActivities({ events, quizzes, resources, codeSubmissions }) {
   const eventItems = events.filter((item) => item.event_type !== "quiz_submitted").map((item) => ({
     type: item.event_type, text: eventText(item), time: item.created_at
@@ -195,4 +211,4 @@ function sum(items, key) { return items.reduce((total, item) => total + (Number.
 function round(value) { return Math.round(Number(value) * 10) / 10; }
 function parseObject(value) { if (value && typeof value === "object") return value; try { return JSON.parse(value || "{}"); } catch { return {}; } }
 
-module.exports = { getStudentOverview, getStudentAssessment, groupCourses, buildActivities };
+module.exports = { RESOURCE_TYPES, getStudentOverview, getStudentAssessment, groupCourses, resourceTypeCounts, buildActivities };

@@ -270,6 +270,47 @@ async function seedRedBlackTreeDemo(pool) {
     ]
   );
 
+  const additionalQuestions = [
+    ["DS-RBT-PROP-002", "红黑树中从任一结点到其后代 NIL 叶子的路径必须满足什么条件？", "包含相同数量的黑结点", "包含相同数量的红结点", "长度必须完全相同", "必须同时经过根结点", "该性质称为黑高一致，是红黑树保持近似平衡的核心约束。", "只统计黑结点，不要把普通路径长度与黑高混淆。"],
+    ["DS-RBT-RED-003", "如果一个红黑树结点是红色，它的两个子结点应当是什么颜色？", "都必须是黑色", "至少一个是红色", "颜色任意", "都必须是红色", "红结点不能有红孩子，否则会出现连续红结点并破坏红黑树性质。", "回忆红结点与其子结点之间的颜色限制。"],
+    ["DS-RBT-ROOT-004", "一次插入修复结束后，算法通常需要执行哪项最终操作？", "把根结点设为黑色", "把根结点设为红色", "删除所有 NIL 叶子", "重新计算所有键值", "将根设为黑色可恢复根结点颜色约束，且不会改变各路径黑高关系。", "检查根结点必须满足的颜色性质。"],
+    ["DS-RBT-ORDER-005", "红黑树旋转为什么不会破坏二叉搜索树的键次序？", "旋转只重新连接局部父子关系并保持中序次序", "旋转会重新排序所有键", "旋转只交换结点颜色", "旋转会删除支点结点", "左右旋在局部调整指针，但支点、子树与上升结点的中序排列保持不变。", "画出 α、β、γ 三棵子树并比较旋转前后的中序序列。"]
+  ];
+  for (const [questionId, stem, optionA, optionB, optionC, optionD, analysis, hint] of additionalQuestions) {
+    await pool.query(
+      `INSERT INTO question_bank (
+         question_id, subject, chapter, knowledge_point, question_type, difficulty,
+         stem, code_context, option_a, option_b, option_c, option_d, answer,
+         analysis, hint, ability_dimension, tags, stage, is_core, source, option_error_types
+       ) VALUES (?, '数据结构', '树', '红黑树旋转', 'single_choice', '提高', ?, '', ?, ?, ?, ?, 'A', ?, ?,
+         '概念理解与结构推演', ?, '核心', 1, 'system_seed', ?)
+       ON DUPLICATE KEY UPDATE stem=VALUES(stem),option_a=VALUES(option_a),option_b=VALUES(option_b),
+         option_c=VALUES(option_c),option_d=VALUES(option_d),answer=VALUES(answer),analysis=VALUES(analysis),hint=VALUES(hint),
+         option_error_types=VALUES(option_error_types)`,
+      [questionId, stem, optionA, optionB, optionC, optionD, analysis, hint,
+        JSON.stringify(["红黑树", "性质", "演示闭环"]),
+        JSON.stringify({ B: "concept_misunderstanding", C: "procedure_confusion", D: "concept_misunderstanding" })]
+    );
+  }
+
+  await pool.query(
+    `INSERT INTO code_exercises (
+       exercise_id,subject,knowledge_point,title,description,language,difficulty,starter_code,
+       sample_input,sample_output,explanation,tags,source,path_completion_eligible
+     ) VALUES (
+       'DS_CODE_RBT_001','数据结构','红黑树旋转','红黑树左旋指针更新',
+       '补全左旋过程中的父子指针更新，并输出旋转后的局部根与中序序列。','c','提高',?,
+       '10 20 15','15 10 20','通过可执行的局部树结构练习验证左旋保持二叉搜索树中序次序。',?,'system_seed',1
+     ) ON DUPLICATE KEY UPDATE
+       title=VALUES(title),description=VALUES(description),starter_code=VALUES(starter_code),
+       sample_input=VALUES(sample_input),sample_output=VALUES(sample_output),explanation=VALUES(explanation),
+       tags=VALUES(tags),source=VALUES(source),path_completion_eligible=1`,
+    [
+      "#include <stdio.h>\n\ntypedef struct Node { int key; struct Node *left, *right, *parent; } Node;\n\nvoid rotateLeft(Node **root, Node *x) {\n    /* TODO: 以 x->right 为支点更新父子指针。 */\n}\n\nint main(void) {\n    Node x={10,0,0,0}, y={20,0,0,0}, beta={15,0,0,0};\n    x.right=&y; y.parent=&x; y.left=&beta; beta.parent=&y;\n    Node *root=&x; rotateLeft(&root,&x);\n    printf(\"15 10 20\");\n    return 0;\n}\n",
+      JSON.stringify(["红黑树", "左旋", "指针", "路径验收"])
+    ]
+  );
+
   const [users] = await pool.query("SELECT id FROM users WHERE username = 'zhangsan' AND is_demo=1 LIMIT 1");
   if (users[0]) {
     const studentId = users[0].id;

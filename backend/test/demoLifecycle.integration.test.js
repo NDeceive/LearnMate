@@ -35,6 +35,7 @@ const {
   resetSeedAndVerify
 } = require("../src/services/competitionDemoService");
 const { ensureDemoAccount } = require("../src/services/demoAccountService");
+const { importKnowledgeBase } = require("../src/services/knowledgeIngestionService");
 
 test.before(async () => {
   await fs.mkdir(storageRoot, { recursive: true });
@@ -96,8 +97,10 @@ test("competition demo seed is idempotent and verify succeeds", async () => {
   assert.deepEqual(after, before);
   assert.equal(after.demoUsers, 4);
   assert.equal(after.quizAttempts, 1);
-  assert.equal(after.resources, 2);
-  assert.equal(after.resourceVersions, 2);
+  assert.equal(after.resources, 5);
+  assert.equal(after.resourceVersions, 5);
+  assert.ok(after.codeSuccesses >= 1);
+  assert.ok(after.approvedReports >= 1);
 
   const verification = await verifyCompetitionDemo();
   assert.equal(verification.passed, true, JSON.stringify(verification, null, 2));
@@ -133,12 +136,30 @@ test("a normal seed repairs a deleted demo error pattern without adding quiz or 
   assert.equal(verification.passed, true, JSON.stringify(verification, null, 2));
 });
 
+test("same-version real knowledge content changes are rejected while line-ending-only changes are idempotent", async () => {
+  const source = path.resolve(__dirname, "../data/knowledge-base/data-structures/01-complexity.md");
+  const raw = await fs.readFile(source, "utf8");
+  const changedRoot = await fs.mkdtemp(path.join(os.tmpdir(), `learnmate-knowledge-drift-${suffix}-`));
+  try {
+    await fs.writeFile(path.join(changedRoot, "changed.md"), `${raw.replace(/\r\n?/g, "\n")}\n真实内容漂移。\n`, "utf8");
+    const report = await importKnowledgeBase({ db: pool, rootDir: changedRoot });
+    assert.equal(report.failed, 1);
+    assert.match(report.errors[0].error, /source version changed/);
+    const before = await demoCounts();
+    await seedCompetitionDemo();
+    assert.deepEqual(await demoCounts(), before, "CRLF/LF differences must not trigger a new import");
+  } finally {
+    await fs.rm(changedRoot, { recursive: true, force: true });
+  }
+});
+
 test("reset preserves non-demo users, then reseeds and verifies", async () => {
   const username = `non-demo-${suffix}`;
   await pool.query(
     "INSERT INTO users(student_no,username,display_name,password_hash,role) VALUES(?,?,?,?, 'STUDENT')",
     [`NON-DEMO-${suffix}`, username, "非演示用户", "test-only-hash"]
   );
+  const [[knowledgeBefore]] = await pool.query("SELECT COUNT(*) count FROM knowledge_sources WHERE status='active'");
   const result = await resetSeedAndVerify({
     env: { ...process.env, NODE_ENV: "test", DEMO_RESET_CONFIRM: RESET_CONFIRMATION }
   });
@@ -147,7 +168,9 @@ test("reset preserves non-demo users, then reseeds and verifies", async () => {
   assert.ok(nonDemo, "non-demo user must survive demo reset");
   const counts = await demoCounts();
   assert.equal(counts.quizAttempts, 1);
-  assert.equal(counts.resources, 2);
+  assert.equal(counts.resources, 5);
+  const [[knowledgeAfter]] = await pool.query("SELECT COUNT(*) count FROM knowledge_sources WHERE status='active'");
+  assert.equal(Number(knowledgeAfter.count), Number(knowledgeBefore.count), "demo reset must not modify the course knowledge base");
 });
 
 test("reset recovers safely from teacher-only, student-only, and empty demo account states", async () => {
@@ -200,6 +223,8 @@ async function demoCounts() {
     (SELECT COUNT(*) FROM learning_resource_progress p JOIN users u ON u.id=p.student_id WHERE u.username='zhangsan') resourceProgress,
     (SELECT COUNT(*) FROM knowledge_retrieval_runs r JOIN users u ON u.id=r.student_id WHERE u.username='zhangsan') retrievalRuns,
     (SELECT COUNT(*) FROM generation_citations c JOIN users u ON u.id=c.student_id WHERE u.username='zhangsan') citations,
-    (SELECT COUNT(*) FROM agent_run_logs l JOIN users u ON u.id=l.student_id WHERE u.username='zhangsan') agentLogs`);
+    (SELECT COUNT(*) FROM agent_run_logs l JOIN users u ON u.id=l.student_id WHERE u.username='zhangsan') agentLogs,
+    (SELECT COUNT(*) FROM code_submissions s JOIN users u ON u.id=s.student_id JOIN code_exercises e ON e.exercise_id=s.exercise_id WHERE u.username='zhangsan' AND s.status='success' AND e.path_completion_eligible=1) codeSuccesses,
+    (SELECT COUNT(*) FROM learning_assessment_reports r JOIN users u ON u.id=r.student_id WHERE u.username='zhangsan' AND r.status='approved') approvedReports`);
   return Object.fromEntries(Object.entries(row).map(([key, value]) => [key, Number(value)]));
 }

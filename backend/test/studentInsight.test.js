@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const request = require("supertest");
 const app = require("../src/app");
-const { groupCourses, buildActivities } = require("../src/services/studentInsightService");
+const { RESOURCE_TYPES, groupCourses, resourceTypeCounts, buildActivities } = require("../src/services/studentInsightService");
 
 test("课程概览只聚合真实掌握记录并保留计数", () => {
   const courses = groupCourses([
@@ -21,6 +21,20 @@ test("最近活动按真实时间倒序且不产生固定记录", () => {
     codeSubmissions: [{ exercise_id: "DS-1", status: "success", created_at: "2026-01-03T08:00:00Z" }]
   });
   assert.deepEqual(activities.map((item) => item.type), ["codelab", "resource", "quiz"]);
+});
+
+test("学生统计始终返回五类资源且未验证完成不计入路径证据", () => {
+  const counts = resourceTypeCounts([
+    { resource_type: "study_note", progress_status: "completed" },
+    { resource_type: "code_case", progress_status: "completed_unverified" },
+    { resource_type: "pptx", progress_status: "in_progress" }
+  ]);
+  assert.deepEqual(Object.keys(counts), RESOURCE_TYPES);
+  assert.equal(counts.study_note.completedCount, 1);
+  assert.equal(counts.code_case.generatedCount, 1);
+  assert.equal(counts.code_case.completedCount, 0);
+  assert.equal(counts.pptx.inProgressCount, 1);
+  assert.deepEqual(counts.quiz_pack, { generatedCount: 0, completedCount: 0, inProgressCount: 0 });
 });
 
 test("学生概览与评估接口要求登录", async () => {

@@ -10,6 +10,9 @@ const { submitQuiz, reconcileQuizAttemptDerivedState } = require("./quizSubmissi
 const { createOrAdjustLearningPath, getCurrentLearningPath } = require("./learningPathService");
 const { generateResource, getResource, openResource } = require("./resourceGenerationService");
 const { generateGroundedAnswer } = require("./groundedAnswerService");
+const { saveSubmission } = require("./codeExerciseService");
+const { runCode } = require("./codeRunnerService");
+const teacherReports = require("./teacherReportService");
 const teacherAccess = require("./teacherAccessService");
 const { checkStorage } = require("./healthService");
 const { verifyPdfDependencies } = require("./assessmentPdfService");
@@ -23,6 +26,7 @@ const REQUIRED_STUDENT_USERNAMES = ["zhangsan", "lisi"];
 const RESET_CONFIRMATION = "RESET_LEARNMATE_DEMO";
 const LEGACY_ADOPT_CONFIRMATION = "ADOPT_LEARNMATE_LEGACY_DEMO";
 const DEMO_QUIZ_KEY = "competition-demo-quiz-v1";
+const DEMO_RESOURCE_TYPES = ["study_note", "mind_map", "pptx", "quiz_pack", "code_case"];
 const DEMO_ACCOUNT_SPECS = [
   { studentNo: "TEACHER-DEMO", username: "teacher_demo", role: "TEACHER" },
   { studentNo: "20260001", username: "zhangsan", role: "STUDENT" },
@@ -78,9 +82,16 @@ async function seedCompetitionDemoUnlocked({ db = pool, importKnowledge = true }
     stageKey: stage.key,
     pathVersion: learningPath.version
   };
-  const mindMap = await ensureDemoResource(db, { ...resourceInput, resourceType: "mind_map" });
-  await ensureDemoResource(db, { ...resourceInput, resourceType: "pptx" });
+  const resources = new Map();
+  for (const resourceType of DEMO_RESOURCE_TYPES) {
+    resources.set(resourceType, await ensureDemoResource(db, { ...resourceInput, resourceType }));
+  }
+  const mindMap = resources.get("mind_map");
   if (mindMap?.id && mindMap.progress?.status === "not_started") await openResource(student.id, mindMap.id);
+
+  await ensureDemoCodeSubmission(db, student.id);
+  const teacher = users.get("teacher_demo");
+  if (!teacher) throw demoError("teacher_demo was not created", "DEMO_TEACHER_MISSING");
 
   const [[chatEvidence]] = await db.query(`SELECT
     (SELECT COUNT(*) FROM generation_citations WHERE student_id=? AND generation_type='chat_answer') citation_count,
@@ -96,6 +107,12 @@ async function seedCompetitionDemoUnlocked({ db = pool, importKnowledge = true }
       minimumScore: 0.05
     });
   }
+
+  // Generate the report only after every evidence source is stable; otherwise the
+  // first retry would legitimately see a different snapshot and create V2.
+  await teacherReports.createReport({ userId: teacher.id, role: "TEACHER" }, student.id, {
+    reportType: "period_assessment", rangeDays: 30
+  });
 
   const summary = await collectDemoSummary(db);
   return { seeded: true, ...summary };
@@ -152,7 +169,7 @@ async function verifyCompetitionDemo({ db = pool, checkPdfDependencies = true } 
   const resourceRows = zhang ? await db.query(`SELECT r.resource_type,r.status,COUNT(f.id) file_count
     FROM learning_resources r LEFT JOIN learning_resource_files f ON f.resource_id=r.id AND f.resource_version=r.current_version
     WHERE r.student_id=? GROUP BY r.id,r.resource_type,r.status`, [zhang.id]).then(([rows]) => rows) : [];
-  const hasMindMap = resourceRows.some((row) => row.resource_type === "mind_map" && row.status === "approved");
+  const resourceTypes = new Set(resourceRows.filter((row) => row.status === "approved").map((row) => row.resource_type));
   let pptxFileValid = false;
   if (zhang) {
     const [[pptxFile]] = await db.query(`SELECT f.storage_path,f.file_size,f.checksum_sha256 FROM learning_resource_files f
@@ -161,9 +178,20 @@ async function verifyCompetitionDemo({ db = pool, checkPdfDependencies = true } 
     if (pptxFile) pptxFileValid = await verifyPptxFile(pptxFile);
   }
   const hasPptx = resourceRows.some((row) => row.resource_type === "pptx" && row.status === "approved" && Number(row.file_count) >= 1) && pptxFileValid;
-  add("learning-resources", hasMindMap && hasPptx, `${resourceRows.length} resources; mind map=${hasMindMap}; pptx=${hasPptx}`);
+  const allResourceTypes = DEMO_RESOURCE_TYPES.every((resourceType) => resourceTypes.has(resourceType));
+  add("learning-resources", allResourceTypes && hasPptx,
+    `${resourceRows.length} resources; types=${[...resourceTypes].sort().join(",")}; pptx=${hasPptx}`);
   const progressCount = zhang ? await count(db, "SELECT COUNT(*) count FROM learning_resource_progress WHERE student_id=?", [zhang.id]) : 0;
   add("resource-progress", progressCount >= 2, `${progressCount} progress records`);
+
+  const successfulCodeCount = zhang ? await count(db, `SELECT COUNT(*) count FROM code_submissions s
+    JOIN code_exercises e ON e.exercise_id=s.exercise_id
+    WHERE s.student_id=? AND s.status='success' AND e.path_completion_eligible=1`, [zhang.id]) : 0;
+  add("codelab-success", successfulCodeCount >= 1, `${successfulCodeCount} eligible successful submissions`);
+
+  const approvedReportCount = zhang ? await count(db, `SELECT COUNT(*) count FROM learning_assessment_reports
+    WHERE student_id=? AND status='approved' AND storage_path IS NOT NULL AND checksum_sha256 IS NOT NULL`, [zhang.id]) : 0;
+  add("approved-assessment-report", approvedReportCount >= 1, `${approvedReportCount} approved reports`);
 
   const activeSources = await count(db, "SELECT COUNT(*) count FROM knowledge_sources WHERE status='active'");
   const activeChunks = await count(db, "SELECT COUNT(*) count FROM knowledge_chunks WHERE status='active' AND safety_status='safe'");
@@ -357,6 +385,32 @@ async function ensureDemoResource(db, input) {
     } catch { /* Regenerate through the validated service below. */ }
   }
   return generateResource(input, { forceArtifactRepair: Boolean(row) });
+}
+
+async function ensureDemoCodeSubmission(db, studentId) {
+  const [[existing]] = await db.query(`SELECT s.id FROM code_submissions s
+    JOIN code_exercises e ON e.exercise_id=s.exercise_id
+    WHERE s.student_id=? AND s.status='success' AND e.path_completion_eligible=1 LIMIT 1`, [studentId]);
+  if (existing) return Number(existing.id);
+  const [[exercise]] = await db.query(`SELECT exercise_id,language,starter_code,sample_input FROM code_exercises
+    WHERE path_completion_eligible=1 ORDER BY exercise_id LIMIT 1`);
+  if (!exercise) throw demoError("No path-eligible CodeLab exercise is available", "DEMO_CODE_EXERCISE_MISSING");
+  const result = await runCode({
+    exerciseId: exercise.exercise_id,
+    language: exercise.language,
+    sourceCode: exercise.starter_code,
+    stdin: exercise.sample_input
+  });
+  if (result.status !== "success") throw demoError("Demo CodeLab submission did not succeed", "DEMO_CODE_SUBMISSION_FAILED");
+  const submission = await saveSubmission({
+    studentId,
+    exerciseId: exercise.exercise_id,
+    language: exercise.language,
+    sourceCode: exercise.starter_code,
+    stdin: exercise.sample_input,
+    result
+  });
+  return Number(submission.id);
 }
 
 async function verifyPptxFile(row) {
