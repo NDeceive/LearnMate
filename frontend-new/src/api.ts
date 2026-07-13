@@ -168,14 +168,16 @@ export interface LearningEventSummary {
 }
 
 export interface LearningResource {
-  id: number; version: number; resourceType: "mind_map" | "pptx"; title: string; status: string;
+  id: number; version: number; resourceType: LearningResourceType; title: string; status: string;
   subject: string; knowledgePoint: string; stageKey: string; pathVersion: number; estimatedMinutes: number;
   generationRationale: string[]; learningObjectives: string[]; targetLearnerSummary: string;
-  content: Record<string, unknown>; review: { status: string; score: number; summary: string; issues: Array<Record<string, unknown>> };
+  content: Record<string, unknown>; review: { status: string; score: number; summary: string; issues: Array<Record<string, unknown>>; checks?: Array<{name:string;passed:boolean;detail:string}> };
   retrievalRunId?: number | null; citations?: KnowledgeCitation[];
   progress: null | { status: string; progressPercent: number; accumulatedSeconds: number; openedAt?: string; completedAt?: string; downloadedAt?: string };
   createdAt: string;
 }
+
+export type LearningResourceType = "study_note" | "mind_map" | "pptx" | "quiz_pack" | "code_case";
 
 export interface KnowledgeCitation { label:string;chunkId:number;sourceKey:string;sourceTitle:string;chapter?:string;section?:string;license:string;version:string;excerpt:string;supportScore:number }
 export interface GroundedAnswerResponse { generationId?:string;retrievalRunId:number;status:"grounded"|"insufficient";answer:string;claims:Array<{text:string;chunkIds:number[]}>;citations:KnowledgeCitation[];confidence:"high"|"medium"|"low"|"insufficient";coverage:number }
@@ -328,7 +330,7 @@ export async function listLearningResources(params: Record<string, string | numb
   const query = new URLSearchParams(); Object.entries(params).forEach(([k,v]) => { if (v !== undefined && v !== "") query.set(k,String(v)); });
   return apiRequest<LearningResource[]>(`/api/resources${query.size ? `?${query}` : ""}`);
 }
-export async function generateLearningResource(input: { resourceType: "mind_map"|"pptx"; subject: string; knowledgePoint: string; stageKey: string; pathVersion: number; regenerate?: boolean }): Promise<LearningResource> {
+export async function generateLearningResource(input: { resourceType: LearningResourceType; subject: string; knowledgePoint: string; stageKey: string; pathVersion: number; regenerate?: boolean }): Promise<LearningResource> {
   const result=await apiRequest<{resource:LearningResource}>("/api/resources/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(input)}); return result.resource;
 }
 export async function getLearningResource(id:number,version?:number):Promise<LearningResource>{const suffix=version?`/versions/${version}`:"";const result=await apiRequest<{resource:LearningResource}>(`/api/resources/${id}${suffix}`);return result.resource;}
@@ -336,6 +338,7 @@ export async function getResourceVersions(id:number):Promise<Array<Record<string
 export async function openLearningResource(id:number):Promise<LearningResource>{const r=await apiRequest<{resource:LearningResource}>(`/api/resources/${id}/open`,{method:"POST"});return r.resource;}
 export async function updateLearningResourceProgress(id:number,progressPercent:number):Promise<LearningResource>{const r=await apiRequest<{resource:LearningResource}>(`/api/resources/${id}/progress`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({progressPercent})});return r.resource;}
 export async function completeLearningResource(id:number):Promise<LearningResource>{const r=await apiRequest<{resource:LearningResource}>(`/api/resources/${id}/complete`,{method:"POST"});return r.resource;}
+export async function submitLearningResourceQuiz(input:{resourceId:number;version:number;subject:string;answers:Array<{questionId:string;answer:string;durationSeconds:number}>}):Promise<QuizSubmissionResult>{return apiRequest<QuizSubmissionResult>("/api/quiz/submit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({idempotencyKey:`resource-${input.resourceId}-v${input.version}-${Date.now()}`,subject:input.subject,startedAt:new Date(Date.now()-60000).toISOString(),submittedAt:new Date().toISOString(),answers:input.answers})});}
 export async function downloadLearningResource(id: number, version?: number): Promise<void> {
   const path = `/api/resources/${id}${version ? `/versions/${version}` : ""}/download`;
   let last: unknown;
