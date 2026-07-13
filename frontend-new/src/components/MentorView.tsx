@@ -3,6 +3,7 @@ import { motion } from "motion/react";
 import { AgentTaskDescriptions, ChatSession, ChatMessage, MessagePart } from "../types";
 import { initialSessions } from "../mockData";
 import { apiRequest } from "../api";
+import CitationPanel from "./knowledge/CitationPanel";
 import { getAgentTaskDescriptions } from "../api";
 import {
   Send,
@@ -312,6 +313,8 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
                           <div className="text-xs space-y-2 leading-relaxed whitespace-pre-wrap">
                             {part.content}
                           </div>
+                          {part.confidence && <div className="mt-2 text-[10px] text-slate-500">置信度 {part.confidence} · 引用覆盖 {Math.round((part.coverage||0)*100)}% · 检索 #{part.retrievalRunId}</div>}
+                          {part.citations && <CitationPanel citations={part.citations}/>}
 
                           {/* If Code block exists */}
                           {part.code && (

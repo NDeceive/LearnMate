@@ -9,5 +9,5 @@ async function open(req,res){try{return res.json({resource:await services.openRe
 async function progress(req,res){try{return res.json({resource:await services.updateProgress(req.user.studentId,req.params.resourceId,req.body||{})});}catch(e){return fail(res,e);}}
 async function complete(req,res){try{return res.json({resource:await services.completeResource(req.user.studentId,req.params.resourceId)});}catch(e){return fail(res,e);}}
 async function stageResources(req,res){try{return res.json({data:await services.stageResources(req.user.studentId,req.query.pathVersion,req.params.stageKey)});}catch(e){return fail(res,e);}}
-function fail(res,e){return res.status(e.statusCode||500).json({error:e.statusCode&&e.statusCode<500?e.message:"resource operation failed"});}
+function fail(res,e){console.error("resource operation failed",e.code||"ERROR",e.message);return res.status(e.statusCode||500).json({error:e.statusCode&&e.statusCode<500?e.message:"resource operation failed"});}
 module.exports={generate,list,detail,versions,versionDetail,download,open,progress,complete,stageResources};

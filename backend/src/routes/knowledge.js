@@ -1,0 +1,10 @@
+const router = require("express").Router();
+const { authMiddleware } = require("../middleware/authMiddleware");
+const controller = require("../controllers/knowledgeController");
+router.use(authMiddleware);
+router.post("/knowledge/search", controller.search);
+router.post("/knowledge/answer", controller.answer);
+router.get("/knowledge/retrieval-runs/:id", controller.run);
+router.get("/knowledge/sources", controller.sources);
+router.get("/knowledge/citations/:generationType/:generationId/versions/:version", controller.citations);
+module.exports = router;

@@ -13,7 +13,9 @@
     "seed:code-exercises": "node scripts/seedCodeExercises.js",
     "seed:learning-loop": "node scripts/seedLearningLoopDemo.js",
     "reset:learning-resources": "node scripts/resetLearningResourceDemo.js",
-    "verify:pptx": "node scripts/verifyPptx.js"
+    "verify:pptx": "node scripts/verifyPptx.js",
+    "import:knowledge-base": "node scripts/importKnowledgeBase.js",
+    "verify:knowledge-base": "node scripts/verifyKnowledgeBase.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

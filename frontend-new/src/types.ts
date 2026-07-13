@@ -78,6 +78,10 @@ export interface MessagePart {
   content: string;
   code?: string;
   codeLanguage?: string;
+  citations?: import("./api").KnowledgeCitation[];
+  confidence?: 'high' | 'medium' | 'low' | 'insufficient';
+  coverage?: number;
+  retrievalRunId?: number;
 }
 
 export interface ChatMessage {

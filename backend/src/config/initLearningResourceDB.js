@@ -51,5 +51,11 @@ async function initLearningResourceDB(pool) {
     PRIMARY KEY (id), UNIQUE KEY uq_resource_progress (student_id,resource_id,resource_version),
     KEY idx_resource_progress_student (student_id,resource_id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+  const [versionColumns] = await pool.query("SHOW COLUMNS FROM learning_resource_versions");
+  const existing = new Set(versionColumns.map((column) => column.Field));
+  if (!existing.has("retrieval_run_id")) await pool.query("ALTER TABLE learning_resource_versions ADD COLUMN retrieval_run_id BIGINT UNSIGNED NULL AFTER prompt_version");
+  if (!existing.has("citations_json")) await pool.query("ALTER TABLE learning_resource_versions ADD COLUMN citations_json JSON NULL AFTER retrieval_run_id");
+  const [indexes] = await pool.query("SHOW INDEX FROM learning_resource_versions");
+  if (!indexes.some((index) => index.Key_name === "idx_resource_retrieval")) await pool.query("ALTER TABLE learning_resource_versions ADD KEY idx_resource_retrieval(student_id,retrieval_run_id)");
 }
 module.exports = { initLearningResourceDB };

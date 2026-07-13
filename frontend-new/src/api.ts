@@ -170,9 +170,14 @@ export interface LearningResource {
   subject: string; knowledgePoint: string; stageKey: string; pathVersion: number; estimatedMinutes: number;
   generationRationale: string[]; learningObjectives: string[]; targetLearnerSummary: string;
   content: Record<string, unknown>; review: { status: string; score: number; summary: string; issues: Array<Record<string, unknown>> };
+  retrievalRunId?: number | null; citations?: KnowledgeCitation[];
   progress: null | { status: string; progressPercent: number; accumulatedSeconds: number; openedAt?: string; completedAt?: string; downloadedAt?: string };
   createdAt: string;
 }
+
+export interface KnowledgeCitation { label:string;chunkId:number;sourceKey:string;sourceTitle:string;chapter?:string;section?:string;license:string;version:string;excerpt:string;supportScore:number }
+export interface GroundedAnswerResponse { generationId?:string;retrievalRunId:number;status:"grounded"|"insufficient";answer:string;claims:Array<{text:string;chunkIds:number[]}>;citations:KnowledgeCitation[];confidence:"high"|"medium"|"low"|"insufficient";coverage:number }
+export function askKnowledgeBase(query:string,knowledgePoint?:string):Promise<GroundedAnswerResponse>{return apiRequest<GroundedAnswerResponse>("/api/knowledge/answer",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query,subject:"数据结构",knowledgePoint})});}
 
 export function getAuthToken() {
   return typeof window === "undefined" ? "" : window.localStorage.getItem(AUTH_TOKEN_KEY) || "";

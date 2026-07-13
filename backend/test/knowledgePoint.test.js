@@ -1,0 +1,1 @@
+const test=require("node:test");const assert=require("node:assert/strict");const{assertAcyclic}=require("../src/services/knowledgePointService");test("先修关系拒绝循环",()=>{assert.doesNotThrow(()=>assertAcyclic([["b","a"],["c","b"]]));assert.throws(()=>assertAcyclic([["a","b"],["b","a"]]),/cycle/);});

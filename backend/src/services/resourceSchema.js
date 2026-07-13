@@ -8,12 +8,14 @@ const SEVERITIES = new Set(["low","medium","high","critical"]);
 const CATEGORIES = new Set(["factuality","relevance","structure","clarity","difficulty","safety","citation","duplication","formatting","resource_reference"]);
 
 function validateResourceEnvelope(value, context) {
-  object(value, "resource"); whitelist(value, ["resourceType","title","subject","knowledgePoint","learningObjectives","targetLearnerSummary","estimatedMinutes","generationRationale","content"], "resource");
+  object(value, "resource"); whitelist(value, ["resourceType","title","subject","knowledgePoint","learningObjectives","targetLearnerSummary","estimatedMinutes","generationRationale","content","retrievalRunId","citations"], "resource");
   if (!RESOURCE_TYPES.has(value.resourceType)) fail("unsupported resourceType");
   if (value.resourceType !== context.resourceType || value.subject !== context.subject || value.knowledgePoint !== context.knowledgePoint) fail("resource context mismatch");
   text(value.title, 255); strings(value.learningObjectives, 1, 8, 240); text(value.targetLearnerSummary, 500);
   integer(value.estimatedMinutes, 5, 240); strings(value.generationRationale, 1, 8, 300);
   const content = value.resourceType === "mind_map" ? validateMindMap(value.content) : validatePptx(value.content, new Set(context.allowedQuestionIds || []));
+  if (value.retrievalRunId !== undefined) integer(value.retrievalRunId, 1, Number.MAX_SAFE_INTEGER);
+  if (value.citations !== undefined) validateCitationCatalog(value.citations);
   return { ...value, content };
 }
 
@@ -21,12 +23,12 @@ function validateMindMap(value) {
   object(value, "mindMap"); whitelist(value, ["root","crossLinks","highlightNodeIds","misconceptionNodeIds","recommendedSequence"], "mindMap");
   const ids = new Set(); let count = 0;
   function visit(node, depth, ancestors) {
-    object(node, "node"); whitelist(node, ["id","label","description","nodeType","importance","children"], "node");
+    object(node, "node"); whitelist(node, ["id","label","description","nodeType","importance","children","citations"], "node");
     const id = identifier(node.id); if (ids.has(id)) fail(`duplicate node id: ${id}`); if (ancestors.has(node)) fail("cyclic mind map object");
     ids.add(id); count += 1; if (depth > 6) fail("mind map depth exceeds 6");
     text(node.label, 120); text(node.description || "", 500, true);
     if (!NODE_TYPES.has(node.nodeType)) fail("invalid nodeType"); if (!IMPORTANCE.has(node.importance)) fail("invalid importance");
-    if (!Array.isArray(node.children)) fail("children must be an array");
+    if (!Array.isArray(node.children)) fail("children must be an array"); if(node.citations!==undefined)citationIds(node.citations);
     const next = new Set(ancestors); next.add(node); node.children.forEach((child) => visit(child, depth + 1, next));
   }
   visit(value.root, 1, new Set()); if (value.root.nodeType !== "root") fail("root nodeType required"); if (count < 8 || count > 40) fail("mind map must contain 8 to 40 nodes");
@@ -36,18 +38,19 @@ function validateMindMap(value) {
 }
 
 function validatePptx(value, allowedQuestionIds) {
-  object(value,"pptx"); whitelist(value,["theme","slides"],"pptx"); object(value.theme,"theme"); whitelist(value.theme,["name","primaryTone","density"],"theme"); text(value.theme.name,60); text(value.theme.primaryTone,30); text(value.theme.density,30);
+  object(value,"pptx"); whitelist(value,["theme","slides","references"],"pptx"); object(value.theme,"theme"); whitelist(value.theme,["name","primaryTone","density"],"theme"); text(value.theme.name,60); text(value.theme.primaryTone,30); text(value.theme.density,30);
   const slides = array(value.slides,6,15).map((slide,index)=>validateSlide(slide,index,allowedQuestionIds));
   const types = new Set(slides.map((s)=>s.slideType));
   for (const required of ["title","objectives","concept","summary"]) if(!types.has(required)) fail(`missing ${required} slide`);
   if(!types.has("misconception")&&!types.has("misconceptions")) fail("missing misconception slide");
-  return { theme:value.theme, slides };
+  if(value.references!==undefined)array(value.references,0,20).forEach((reference)=>{object(reference,"reference");whitelist(reference,["sourceKey","title","chapter","section","version","license"],"reference");Object.values(reference).forEach((item)=>text(item||"",500,true));});
+  return { theme:value.theme, slides, references:value.references||[] };
 }
 function validateSlide(slide,index,allowedQuestionIds){
-  object(slide,`slide[${index}]`); const allowed=["slideType","title","subtitle","speakerNotes","bullets","body","steps","left","right","items","language","code","explanation","questionIds","nextSteps"];
+  object(slide,`slide[${index}]`); const allowed=["slideType","title","subtitle","speakerNotes","bullets","body","steps","left","right","items","language","code","explanation","questionIds","nextSteps","citations"];
   whitelist(slide,allowed,`slide[${index}]`); if(!SLIDE_TYPES.has(slide.slideType)) fail("invalid slideType"); text(slide.title,160); text(slide.subtitle||"",240,true); text(slide.speakerNotes||"",1000,true); text(slide.body||"",1200,true); text(slide.code||"",2500,true); text(slide.explanation||"",800,true);
   for(const field of ["bullets","nextSteps","questionIds"]) if(slide[field]!==undefined) strings(slide[field],0,12,300);
-  if(slide.questionIds) slide.questionIds.forEach((id)=>{if(!allowedQuestionIds.has(id)) fail(`invalid questionId: ${id}`);});
+  if(slide.questionIds) slide.questionIds.forEach((id)=>{if(!allowedQuestionIds.has(id)) fail(`invalid questionId: ${id}`);}); if(slide.citations!==undefined)citationIds(slide.citations);
   if(slide.steps!==undefined) array(slide.steps,0,12).forEach((step)=>{object(step,"step");whitelist(step,["title","description"],"step");text(step.title,160);text(step.description,500);});
   if(slide.items!==undefined) array(slide.items,0,12).forEach((item)=>{if(typeof item==="string")text(item,300);else{object(item,"item");whitelist(item,["mistake","correction","title","description"],"item");Object.values(item).forEach((v)=>text(v,500));}});
   for(const field of ["left","right"]) if(slide[field]!==undefined){object(slide[field],field);whitelist(slide[field],["title","items"],field);text(slide[field].title,160);strings(slide[field].items,0,12,300);}
@@ -60,6 +63,8 @@ function validateReview(value) {
   if(value.correctedContent!==null&&value.correctedContent!==undefined)object(value.correctedContent,"correctedContent"); return {...value,issues};
 }
 function fingerprint(value){return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");}
+function citationIds(value){return array(value,0,8).map((id)=>integer(id,1,Number.MAX_SAFE_INTEGER));}
+function validateCitationCatalog(value){return array(value,1,8).map((citation)=>{object(citation,"citation");whitelist(citation,["label","chunkId","sourceKey","sourceTitle","chapter","section","license","version","excerpt","supportScore"],"citation");text(citation.label,20);integer(citation.chunkId,1,Number.MAX_SAFE_INTEGER);for(const field of["sourceKey","sourceTitle","chapter","section","license","version","excerpt"])text(citation[field]||"",field==="excerpt"?500:255,true);return citation;});}
 function object(v,p){if(!v||typeof v!=="object"||Array.isArray(v))fail(`${p} must be object`);} function array(v,min,max){if(!Array.isArray(v)||v.length<min||v.length>max)fail("invalid array length");return v;}
 function whitelist(v,allowed,p){const set=new Set(allowed);const unknown=Object.keys(v).filter((k)=>!set.has(k));if(unknown.length)fail(`${p} unknown fields: ${unknown.join(",")}`);}
 function text(v,max,empty=false){if(typeof v!=="string"||(!empty&&!v.trim())||v.length>max)fail("invalid text");if(/<\/?[a-z][^>]*>|javascript:|https?:\/\//i.test(v))fail("unsafe HTML or URL");return v.trim();}
