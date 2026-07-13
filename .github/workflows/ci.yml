@@ -2,6 +2,8 @@ name: CI
 
 "on":
   push:
+    branches:
+      - main
   pull_request:
 
 permissions:
@@ -54,8 +56,8 @@ jobs:
       SPARK_APP_ID: ""
       SPARK_API_SECRET: ""
       CORS_ALLOWED_ORIGINS: http://localhost:8080,http://localhost:8081
-      RESOURCE_STORAGE_DIR: /tmp/learnmate/resources
-      REPORT_STORAGE_DIR: /tmp/learnmate/reports
+      RESOURCE_STORAGE_DIR: /tmp/learnmate/backend-test/resources
+      REPORT_STORAGE_DIR: /tmp/learnmate/backend-test/reports
       REPORT_BROWSER_PATH: /usr/bin/google-chrome
       REPORT_FONT_PATH: /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
       DB_INIT_MAX_ATTEMPTS: "20"
@@ -88,15 +90,105 @@ jobs:
           npm run db:init
       - name: Import the local knowledge base
         run: npm run import:knowledge-base
-      - name: Seed and verify competition demo data
+      - name: Seed the base question bank required by integration tests
+        run: npm run seed:base-questions
+      - name: Run backend tests
+        run: npm test
+
+  demo-lifecycle:
+    name: Demo lifecycle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      mysql:
+        image: mysql:8.4.10
+        env:
+          MYSQL_DATABASE: learnmate_demo_ci
+          MYSQL_ROOT_PASSWORD: ci_mysql_root_password
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      PORT: "5800"
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+      DB_USER: root
+      DB_PASSWORD: ci_mysql_root_password
+      DB_NAME: learnmate_demo_ci
+      JWT_SECRET: ci-only-jwt-secret-with-at-least-thirty-two-characters
+      JWT_EXPIRES_IN: 1h
+      DEMO_PASSWORD: ci-only-demo-password
+      SEED_DEMO_DATA: "false"
+      KNOWLEDGE_IMPORT_ON_START: "false"
+      AI_ENABLED: "false"
+      PATH_PLANNER_AI_ENABLED: "false"
+      MULTIMODAL_RESOURCE_AI_ENABLED: "false"
+      MULTIMODAL_REVIEW_AI_ENABLED: "false"
+      SPARK_API_KEY: ""
+      SPARK_APP_ID: ""
+      SPARK_API_SECRET: ""
+      CORS_ALLOWED_ORIGINS: http://localhost:8080,http://localhost:8081
+      RESOURCE_STORAGE_DIR: /tmp/learnmate/demo-lifecycle/resources
+      REPORT_STORAGE_DIR: /tmp/learnmate/demo-lifecycle/reports
+      REPORT_BROWSER_PATH: /usr/bin/google-chrome
+      REPORT_FONT_PATH: /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
+      DB_INIT_MAX_ATTEMPTS: "20"
+      DB_INIT_RETRY_MS: "1000"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install Chinese PDF font
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes fonts-noto-cjk
+          test -x "$REPORT_BROWSER_PATH"
+          test -f "$REPORT_FONT_PATH"
+      - name: Install dependencies
+        run: npm ci
+      - name: Initialize database twice
+        run: |
+          npm run db:init
+          npm run db:init
+      - name: Import the local knowledge base
+        run: npm run import:knowledge-base
+      - name: Seed twice and verify competition demo data
         run: |
           npm run demo:seed
           npm run demo:seed
           npm run demo:verify
-      - name: Run backend tests
-        run: npm test
-      - name: Verify tests did not mutate the competition demo baseline
-        run: npm run demo:verify
+      - name: Verify reset safety guards
+        run: |
+          if DEMO_RESET_CONFIRM= npm run demo:reset; then
+            echo "Demo reset unexpectedly succeeded without confirmation."
+            exit 1
+          fi
+          if NODE_ENV=production DEMO_RESET_CONFIRM=RESET_LEARNMATE_DEMO npm run demo:reset; then
+            echo "Demo reset unexpectedly succeeded in production."
+            exit 1
+          fi
+      - name: Reset, reseed, and verify competition demo data
+        env:
+          DEMO_RESET_CONFIRM: RESET_LEARNMATE_DEMO
+        run: |
+          npm run demo:reset
+          npm run demo:verify
 
   student-frontend:
     name: Student frontend
