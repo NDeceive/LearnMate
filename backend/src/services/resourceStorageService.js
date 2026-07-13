@@ -42,8 +42,15 @@ async function finalizeFile(tempPath, { studentId, resourceId, version, fileType
   };
 }
 function resolveStoredFile(storagePath) {
-  const normalized = String(storagePath || "").replace(/\\/g, "/");
-  if (!normalized || normalized.includes("..") || path.isAbsolute(normalized)) throw new Error("invalid storage path");
+  const raw = String(storagePath || "");
+  const normalized = raw.replace(/\\/g, "/");
+  if (
+    !normalized
+    || normalized.includes("..")
+    || path.posix.isAbsolute(normalized)
+    || path.win32.isAbsolute(raw)
+    || /^[A-Za-z]:/.test(normalized)
+  ) throw new Error("invalid storage path");
   const resolved = path.resolve(STORAGE_ROOT, normalized);
   if (!resolved.startsWith(`${STORAGE_ROOT}${path.sep}`)) throw new Error("storage path escapes root");
   return resolved;
