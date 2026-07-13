@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import type { UserProfile, Course, WeakPoint, ErrorRecord, QuizQuestion } from "./types";
+import type { UserProfile, Course, WeakPoint } from "./types";
 
 // Views
 import Portal from "./components/Portal";
@@ -16,14 +16,13 @@ const PathView = lazy(() => import("./components/PathView"));
 const ErrorView = lazy(() => import("./components/ErrorView"));
 const KnowledgeGraph = lazy(() => import("./components/KnowledgeGraph"));
 const CodeLabView = lazy(() => import("./components/CodeLabView"));
-const SimplePlaceholderView = lazy(() => import("./components/SimplePlaceholderView"));
 const ProfileView = lazy(() => import("./components/ProfileView"));
+const StudentAssessmentView = lazy(() => import("./components/StudentAssessmentView"));
 
 import {
   Award,
   BookOpen,
   Brain,
-  ClipboardList,
   Code2,
   Compass,
   Cpu,
@@ -63,7 +62,6 @@ const TAB_PATHS: Record<string, string> = {
   path: "/student/path",
   quiz: "/student/quiz",
   codelab: "/student/codelab",
-  homework: "/student/homework",
   errors: "/student/errors",
   analytics: "/student/profile",
   report: "/student/report"
@@ -127,7 +125,6 @@ export default function App() {
   const [profile, setProfile] = useState<UserProfile>({ name: "同学", proficiency: 0, totalHours: 0, completionRate: 0, knowledgeCoverage: 0, streak: 0, testsTaken: 0, pendingTasks: 0, weakPointsCount: 0, extraPoints: 0 });
   const [courses, setCourses] = useState<Course[]>([]);
   const [weakPoints, setWeakPoints] = useState<WeakPoint[]>([]);
-  const [errorRecords, setErrorRecords] = useState<ErrorRecord[]>([]);
 
   // Navigations
   const [activeTab, setActiveTab] = useState<string>(() => getInitialTabFromPath());
@@ -270,71 +267,11 @@ export default function App() {
     }
   };
 
-  // Add errored question dynamically to the local Error Bank list!
-  const handleAddErrorRecord = (question: QuizQuestion, selectedIndex: number) => {
-    // Avoid double adding
-    if (errorRecords.some((rec) => rec.question === question.question)) return;
-
-    const newRecord: ErrorRecord = {
-      id: `err-${crypto.randomUUID()}`,
-      title: `${question.domain} 专项测验偏误：${question.question.substring(0, 15)}...`,
-      course: question.domain,
-      question: question.question,
-      code: question.code,
-      options: question.options,
-      userAnswer: selectedIndex,
-      correctAnswer: question.answerIndex,
-      diagnosis: {
-        rootCause: `在本题关于【${question.domain}】的推演中，选错了答案选项。`,
-        cognitiveTrap: "受到了相似抗干扰选项的误导，或者计算时在极端边界/计数上出现微调偏离。",
-        learningPathAdjustment: "建议返回「AI智能问答」板块输入关键词并调阅该算法的执行动画。计智引擎已自动更新您的知识覆盖率和消灭进度。"
-      },
-      similarRecommendations: [
-        `1. 关于 ${question.domain} 领域极值特性的延伸拓展题`,
-        `2. 对比 ${question.domain} 不同算法在稠密条件下的表现`
-      ],
-      remediated: false,
-      timestamp: new Date().toLocaleDateString()
-    };
-
-    setErrorRecords((prev) => [newRecord, ...prev]);
-
-    // Adjust global weak points counters and profile stats
-    setProfile((prev) => ({
-      ...prev,
-      weakPointsCount: prev.weakPointsCount + 1,
-      pendingTasks: prev.pendingTasks + 1
-    }));
-  };
-
-  // Mark specified error as remediated
-  const handleRemediateRecord = (id: string) => {
-    setErrorRecords((prev) =>
-      prev.map((rec) => (rec.id === id ? { ...rec, remediated: true } : rec))
-    );
-
-    // Adjust profile counters
-    setProfile((prev) => ({
-      ...prev,
-      weakPointsCount: Math.max(0, prev.weakPointsCount - 1),
-      pendingTasks: Math.max(0, prev.pendingTasks - 1),
-      proficiency: Math.min(100, prev.proficiency + 1)
-    }));
-  };
-
   // Handle study hour increments on completion of focus blocks
   const handleFocusComplete = (minutes: number) => {
     setProfile((prev) => ({
       ...prev,
       totalHours: Number((prev.totalHours + minutes / 60).toFixed(2))
-    }));
-  };
-
-  // Handle profile updates (e.g., streak and extra points from daily challenges)
-  const handleUpdateProfile = (updates: Partial<UserProfile>) => {
-    setProfile((prev) => ({
-      ...prev,
-      ...updates
     }));
   };
 
@@ -372,7 +309,6 @@ export default function App() {
       items: [
         { id: "quiz", label: "每日测验", icon: <Brain className="w-4 h-4" /> },
         { id: "codelab", label: "代码实验室", icon: <Code2 className="w-4 h-4" /> },
-        { id: "homework", label: "作业管理", icon: <ClipboardList className="w-4 h-4" /> },
         { id: "errors", label: "错题本", icon: <AlertTriangle className="w-4 h-4" /> }
       ]
     },
@@ -605,11 +541,7 @@ export default function App() {
         <Suspense fallback={<div className="rounded-2xl border border-slate-100 bg-white p-8 text-center text-sm text-slate-500">正在加载页面…</div>}>
         {activeTab === "dashboard" && (
           <Dashboard
-            profile={profile}
-            courses={courses}
-            weakPoints={weakPoints}
             onNavigateToTab={handleNavigateToTab}
-            onUpdateProfile={handleUpdateProfile}
           />
         )}
 
@@ -622,7 +554,6 @@ export default function App() {
 
         {activeTab === "quiz" && (
           <QuizView
-            onAddErrorRecord={handleAddErrorRecord}
             onNavigateToTab={handleNavigateToTab}
             prefill={quizPrefill}
           />
@@ -655,8 +586,6 @@ export default function App() {
 
         {activeTab === "errors" && (
           <ErrorView
-            errorRecords={errorRecords}
-            onRemediateRecord={handleRemediateRecord}
             onNavigateToTab={handleNavigateToTab}
           />
         )}
@@ -670,22 +599,8 @@ export default function App() {
           />
         )}
 
-        {activeTab === "homework" && (
-          <SimplePlaceholderView
-            title="作业管理"
-            description="作业管理模块将用于查看课程作业、提交记录、批改反馈和智能复盘任务。本阶段先预留学生端入口。"
-            actionLabel="前往课程资源"
-            onAction={() => handleNavigateToTab("resource")}
-          />
-        )}
-
         {activeTab === "report" && (
-          <SimplePlaceholderView
-            title="评估报告"
-            description="评估报告模块将汇总阶段测验、错题修复、知识掌握变化和多智能体学习建议。本阶段先预留报告入口。"
-            actionLabel="查看学习画像"
-            onAction={() => handleNavigateToTab("analytics")}
-          />
+          <StudentAssessmentView onNavigateToTab={handleNavigateToTab} />
         )}
         </Suspense>
         </ChunkErrorBoundary>

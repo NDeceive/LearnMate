@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 
 interface QuizViewProps {
-  onAddErrorRecord: (question: QuizQuestion, selectedIndex: number) => void;
   onNavigateToTab: (tab: string, prefillData?: any) => void;
   prefill?: {
     subject?: string;
@@ -28,7 +27,7 @@ interface QuizViewProps {
   } | null;
 }
 
-export default function QuizView({ onAddErrorRecord, onNavigateToTab, prefill }: QuizViewProps) {
+export default function QuizView({ onNavigateToTab, prefill }: QuizViewProps) {
   // Config
   const [settings, setSettings] = useState<QuizSettings>({
     domain: "数据结构",
