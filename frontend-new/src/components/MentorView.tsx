@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import type { ChatSession, ChatMessage } from "../types";
-import { apiRequest } from "../api";
+import { apiRequest, type ProfileResponse } from "../api";
 import CitationPanel from "./knowledge/CitationPanel";
 import {
   Send,
@@ -13,7 +13,6 @@ import {
   Code,
   AlertTriangle,
   ArrowRight,
-  Paperclip,
   Check,
   Copy,
   Hash,
@@ -35,6 +34,12 @@ const INITIAL_SESSION: ChatSession = {
   messages: []
 };
 
+const RECOMMENDED_QUESTIONS = [
+  "红黑树左旋为什么不会破坏二叉搜索树的顺序？",
+  "请对比栈和队列的典型应用场景。",
+  "如何判断一个递归算法的时间复杂度？"
+];
+
 export default function MentorView({ initialPrompt, onClearPrefill }: MentorViewProps) {
   const [sessions, setSessions] = useState<ChatSession[]>([INITIAL_SESSION]);
   const [activeSessionId, setActiveSessionId] = useState<string>(INITIAL_SESSION.id);
@@ -43,10 +48,15 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [requestError, setRequestError] = useState("");
   const [lastFailedPrompt, setLastFailedPrompt] = useState("");
+  const [currentCourse, setCurrentCourse] = useState("");
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
+
+  useEffect(() => {
+    apiRequest<ProfileResponse>("/api/profile/me").then((value) => setCurrentCourse(value.profile.currentCourse || "")).catch(() => setCurrentCourse(""));
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -159,7 +169,7 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
           </button>
 
           <div className="space-y-2.5">
-            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1.5">历史学术咨询</h4>
+            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1.5">当前浏览器会话（刷新后不保留）</h4>
             
             <div className="space-y-1.5">
               {sessions.map((s) => {
@@ -214,6 +224,9 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
                 <p className="text-[11px] text-slate-400 mt-1 max-w-xs leading-relaxed">
                   输入问题后，系统会请求后端知识库问答服务；没有服务端结果时不会生成替代答案。
                 </p>
+              </div>
+              <div className="grid gap-2 w-full max-w-md">
+                {RECOMMENDED_QUESTIONS.map((question) => <button key={question} onClick={() => handleSubmitMessage(question)} className="rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2 text-left text-[11px] font-bold text-blue-800">{question}</button>)}
               </div>
             </div>
           ) : (
@@ -340,9 +353,6 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
 
           <div className="flex justify-between items-center">
             <div className="flex gap-1.5">
-              <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer">
-                <Paperclip className="w-4 h-4" />
-              </button>
               <button
                 onClick={() => setInputText((p) => p + "\n```c\n\n```")}
                 className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer text-xs font-mono font-bold flex items-center gap-0.5"
@@ -371,6 +381,20 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
 
       {/* 3. RIGHT SIDEBAR: Knowledge Tags / Recommended / Follow-ups (3 Columns) */}
       <div className="lg:col-span-3 space-y-6 overflow-y-auto h-full">
+        <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3">
+          <h4 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider">当前支持课程</h4>
+          <p className="text-xs text-slate-600">{currentCourse || "数据结构"}</p>
+          <p className="text-[10px] text-slate-400 leading-relaxed">知识库引用能力当前以数据结构课程内容为主；回答会标明引用覆盖与置信度。</p>
+        </section>
+        <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3">
+          <h4 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider">多智能体能力</h4>
+          <ul className="space-y-2 text-[11px] text-slate-600 leading-relaxed">
+            <li><strong>画像协调：</strong>结合当前学习画像理解问题范围。</li>
+            <li><strong>理论讲解：</strong>拆解概念、边界与复杂度。</li>
+            <li><strong>代码辅助：</strong>组织可读示例与运行思路。</li>
+            <li><strong>质量复核：</strong>检查结论并展示可核验引用。</li>
+          </ul>
+        </section>
         {/* Knowledge tags */}
         <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3">
           <h4 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1">

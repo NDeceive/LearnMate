@@ -9,7 +9,7 @@ async function listWrongQuestionItems(req, res) {
     const { status, subject } = req.query || {};
 
     if (status && !VALID_WRONG_QUESTION_STATUSES.includes(status)) {
-      return res.status(400).json({ error: "status must be 待复习 or 已掌握" });
+      return res.status(400).json({ error: "错题状态只能是待复习或已掌握" });
     }
 
     const data = await listWrongQuestions({
@@ -32,11 +32,11 @@ async function patchWrongQuestionStatus(req, res) {
     const { status } = req.body || {};
 
     if (!Number.isInteger(id) || id <= 0) {
-      return res.status(400).json({ error: "valid wrong question id is required" });
+      return res.status(400).json({ error: "错题编号无效" });
     }
 
     if (!VALID_WRONG_QUESTION_STATUSES.includes(status)) {
-      return res.status(400).json({ error: "status must be 待复习 or 已掌握" });
+      return res.status(400).json({ error: "错题状态只能是待复习或已掌握" });
     }
 
     const updated = await updateWrongQuestionStatus({
@@ -46,7 +46,7 @@ async function patchWrongQuestionStatus(req, res) {
     });
 
     if (!updated) {
-      return res.status(404).json({ error: "wrong question not found" });
+      return res.status(404).json({ error: "未找到该错题记录" });
     }
 
     return res.json({ success: true });

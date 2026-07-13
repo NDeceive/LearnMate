@@ -167,6 +167,35 @@ export interface LearningEventSummary {
   eventType: string;
 }
 
+export interface StudentOverview {
+  generatedAt: string;
+  studentName: string;
+  profile: { version: number; completeness: number; confirmedAt: string | null; currentCourse: string; overallMastery: number | null; weakPointCount: number; errorPatternCount: number };
+  courses: Array<{ subject: string; mastery: number | null; practiceCount: number; wrongCount: number; knowledgePointCount: number }>;
+  quiz: { attemptCount: number; averageAccuracy: number | null; correctCount: number; answerCount: number; latestAt: string | null; recent: Array<{ id: number; subject: string; score: number; correctCount: number; totalCount: number; submittedAt: string }> };
+  path: null | { version: number; title: string; progress: number | null; stages: number };
+  resources: { totalCount: number; completedCount: number; inProgressCount: number; latestAt: string | null };
+  codeLab: { submissionCount: number; successCount: number; successRate: number | null; latestAt: string | null };
+  recentActivities: Array<{ type: string; text: string; time: string }>;
+}
+
+export interface AssessmentConclusion { text: string; evidence: string[]; knowledgePoint?: string | null; subject?: string | null }
+export interface StudentAssessment {
+  generatedAt: string;
+  profileVersion: number;
+  evidenceSufficient: boolean;
+  evidenceCount: number;
+  metrics: { overallMastery: number | null; pathProgress: number | null; completedResources: number; resourceCount: number; quiz: StudentOverview["quiz"]; codeLab: StudentOverview["codeLab"] };
+  mastery: Array<{ subject: string; knowledgePoint: string; mastery: number | null; wrongCount: number; practiceCount: number; updatedAt?: string }>;
+  weaknesses: AssessmentConclusion[];
+  errorPatterns: AssessmentConclusion[];
+  strengths: AssessmentConclusion[];
+  risks: AssessmentConclusion[];
+  recommendations: AssessmentConclusion[];
+  latestPersistedReport: null | { id: number; version: number; generatedAt: string };
+  dataSources: string[];
+}
+
 export interface LearningResource {
   id: number; version: number; resourceType: LearningResourceType; title: string; status: string;
   subject: string; knowledgePoint: string; stageKey: string; pathVersion: number; estimatedMinutes: number;
@@ -324,6 +353,22 @@ export async function generateLearningPath(): Promise<LearningPathResponse> {
 export async function getLearningPathVersions(): Promise<LearningPathVersion[]> {
   const response = await apiRequest<{ data: LearningPathVersion[] } | LearningPathVersion[]>("/api/path/versions");
   return Array.isArray(response) ? response : response.data;
+}
+
+export function getStudentOverview(): Promise<StudentOverview> {
+  return apiRequest<StudentOverview>("/api/student/overview");
+}
+
+export function getStudentAssessment(): Promise<StudentAssessment> {
+  return apiRequest<StudentAssessment>("/api/student/assessment");
+}
+
+export function updateWrongQuestionStatus(id: number | string, status: "待复习" | "已掌握"): Promise<{ success: boolean }> {
+  return apiRequest<{ success: boolean }>(`/api/wrong-questions/${encodeURIComponent(String(id))}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status })
+  });
 }
 
 export async function listLearningResources(params: Record<string, string | number | undefined> = {}): Promise<LearningResource[]> {

@@ -22,7 +22,7 @@ export default function ProfileView({ onNavigateToTab }: { onNavigateToTab: (tab
   useEffect(load, [refreshKey]);
 
   if (loading) return <div className="rounded-2xl bg-white border border-slate-100 p-10 text-sm text-slate-500">正在读取真实学生画像…</div>;
-  if (error) return <div className="rounded-2xl bg-rose-50 border border-rose-100 p-6 text-sm text-rose-700">{error}</div>;
+  if (error) return <div className="rounded-2xl bg-rose-50 border border-rose-100 p-6 text-sm text-rose-700" role="alert"><p>学习画像加载失败：{error}</p><button onClick={load} className="mt-4 rounded-xl bg-rose-700 px-4 py-2 text-xs font-bold text-white">重试</button></div>;
   if (!data) return null;
   const profile = data.profile;
   const refreshed = () => { setShowDialogue(false); setRefreshKey((value) => value + 1); };

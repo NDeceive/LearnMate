@@ -5,6 +5,7 @@ const { requestContext, notFoundHandler, errorHandler } = require("./middleware/
 
 const healthRoutes = require("./routes/health");
 const chatRoutes = require("./routes/chat");
+const studentInsightRoutes = require("./routes/studentInsights");
 const resourceRoutes = require("./routes/resources");
 const quizRoutes = require("./routes/quiz");
 const openQuestionRoutes = require("./routes/openQuestions");
@@ -27,6 +28,7 @@ app.use(express.json({ limit: "2mb" }));
 app.use("/api", healthRoutes);
 app.use("/api", authRoutes);
 app.use("/api", chatRoutes);
+app.use("/api", studentInsightRoutes);
 app.use("/api", resourceRoutes);
 app.use("/api", quizRoutes);
 app.use("/api", openQuestionRoutes);

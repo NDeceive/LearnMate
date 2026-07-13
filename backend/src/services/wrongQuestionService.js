@@ -122,7 +122,7 @@ async function updateWrongQuestionStatus({ studentId, id, status }) {
 
 function assertValidStatus(status) {
   if (!VALID_WRONG_QUESTION_STATUSES.includes(status)) {
-    const error = new Error("status must be 待复习 or 已掌握");
+    const error = new Error("错题状态只能是待复习或已掌握");
     error.statusCode = 400;
     throw error;
   }
