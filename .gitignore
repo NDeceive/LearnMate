@@ -7,6 +7,7 @@ build/
 dist/
 coverage/
 backend/storage/resources/
+backend/storage/reports/
 backend/storage/temp/
 
 # Logs

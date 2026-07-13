@@ -62,8 +62,8 @@ const TASK_SUMMARIES = {
   },
   code_run: {
     input: "读取代码练习编号、语言、标准输入和源码摘要。",
-    analysis: "使用 mock runner 进行安全模拟运行，不真实执行用户代码。",
-    output: "已生成模拟运行结果并记录提交。"
+    analysis: "使用演示运行器生成示例结果，不真实执行用户代码。",
+    output: "已生成演示运行结果并记录提交。"
   },
   code_explain: {
     input: "读取代码练习、源码摘要、标准输出和错误信息。",
@@ -97,9 +97,12 @@ async function logAgentRun({
           output_text,
           status,
           duration_ms,
-          source
+          source,
+          student_id,
+          resource_id,
+          path_version
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         ensureText(agentName) || "coordinator",
@@ -108,7 +111,10 @@ async function logAgentRun({
         toLongText(outputText),
         normalizeStatus(status),
         normalizeDuration(durationMs),
-        ensureText(source) || "agent"
+        ensureText(source) || "agent",
+        positiveOrNull(arguments[0]?.studentId || pick(inputText, ["studentId", "student_id"])),
+        positiveOrNull(arguments[0]?.resourceId || pick(inputText, ["resourceId", "resource_id"])),
+        positiveOrNull(arguments[0]?.pathVersion || pick(inputText, ["pathVersion", "path_version"]))
       ]
     );
   } catch (error) {
@@ -116,7 +122,8 @@ async function logAgentRun({
   }
 }
 
-async function listAgentLogs({ limit } = {}) {
+async function listAgentLogs({ limit, studentId } = {}) {
+  const owner = positiveOrNull(studentId);
   const [rows] = await pool.query(
     `
       SELECT
@@ -130,10 +137,11 @@ async function listAgentLogs({ limit } = {}) {
         source,
         created_at
       FROM agent_run_logs
+      ${owner ? "WHERE student_id = ?" : ""}
       ORDER BY created_at DESC, id DESC
       LIMIT ?
     `,
-    [normalizeLimit(limit)]
+    owner ? [owner, normalizeLimit(limit)] : [normalizeLimit(limit)]
   );
 
   return rows;
@@ -238,7 +246,7 @@ function buildOutputSummary(taskType, outputData, fallback, status) {
     const runStatus = pick(outputData, ["status"]);
     const stdout = pick(outputData, ["stdout"]);
     if (runStatus) {
-      return truncate(`mock runner 已返回 ${runStatus}，标准输出：${stdout || "无"}`, 120);
+      return truncate(`演示运行器已返回 ${runStatus}，示例输出：${stdout || "无"}`, 120);
     }
   }
 
@@ -407,6 +415,11 @@ function ensureText(value) {
   }
 
   return String(value).trim();
+}
+
+function positiveOrNull(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : null;
 }
 
 module.exports = {

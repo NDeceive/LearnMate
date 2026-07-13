@@ -132,13 +132,15 @@ node -e "require('dotenv').config(); const { isAIEnabled } = require('./src/serv
 
 ---
 
-## 演示账号
+## 教师端与演示账号
 
-| 用户名 | 密码 | 说明 |
-|--------|------|------|
-| `zhangsan` | `123456` | 已有完整数据（测验、作业、错题、画像等） |
-| `lisi` | `123456` | 空数据账号 |
-| `wangwu` | `123456` | 高掌握度账号 |
+教师端位于 `frontend-teacher`，默认开发地址为 `http://localhost:3001`，通过 `VITE_API_BASE_URL` 与学生端共用 LearnMate 后端。
+
+设置 `DEMO_PASSWORD` 后，后端会幂等创建 `teacher_demo`（TEACHER）、数据结构演示班级，并关联已有的 `zhangsan` 与 `lisi` 学生数据。所有演示账号密码均使用该环境变量并以 bcrypt 哈希入库；仓库和文档不保存明文密码。
+
+报告 PDF 使用本机 Edge/Chrome 无头打印并校验 `%PDF-` 文件头与 SHA-256。Windows 默认使用系统中文字体；其他环境请配置 `REPORT_BROWSER_PATH` 和 `REPORT_FONT_PATH`。
+
+教师端尚未提供教师批量任务、真实实时监考、真实代码沙箱或复杂 Word/OCR 题库导入；相关入口不会以模拟数据展示。
 
 ## License
 

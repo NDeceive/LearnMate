@@ -5,7 +5,7 @@ const {
 
 async function listAgentLogItems(req, res) {
   try {
-    const logs = await listAgentLogs({ limit: req.query.limit });
+    const logs = await listAgentLogs({ limit: req.query.limit, studentId: req.user.studentId });
 
     return res.json({
       data: logs.map(buildAgentLogSummary)
