@@ -20,6 +20,7 @@ const databaseConfig = {
   user: process.env.DB_USER || "root",
   password: process.env.DB_PASSWORD || "",
   database: getDatabaseName(),
+  connectTimeout: Number(process.env.DB_CONNECT_TIMEOUT_MS || 5000),
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,

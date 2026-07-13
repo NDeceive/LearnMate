@@ -168,6 +168,88 @@ async function upsertErrorPattern(connection, studentId, question, attribution) 
   );
 }
 
+async function reconcileQuizAttemptDerivedState({ studentId, idempotencyKey }) {
+  const id = Number(studentId);
+  const key = String(idempotencyKey || "").trim();
+  if (!Number.isInteger(id) || id <= 0 || !key || key.length > 100) throw requestError("invalid quiz reconciliation scope");
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.query(
+      `SELECT a.id attempt_id,a.submitted_at,aa.question_id,aa.selected_answer,aa.correct_answer,aa.error_type,
+        qb.subject,qb.knowledge_point,qb.difficulty,qb.stem,qb.analysis,qb.ability_dimension,qb.tags,qb.option_error_types
+       FROM quiz_attempts a JOIN quiz_attempt_answers aa ON aa.attempt_id=a.id
+       JOIN question_bank qb ON qb.question_id=aa.question_id
+       WHERE a.student_id=? AND a.idempotency_key=? AND aa.is_correct=0 FOR UPDATE`,
+      [id, key]
+    );
+    for (const row of rows) {
+      const question = normalizeQuestion(row);
+      const attribution = inferErrorAttribution(question, row.selected_answer);
+      const errorType = String(row.error_type || attribution.errorType);
+      await connection.query(
+        `UPDATE quiz_attempt_answers SET error_type=?
+         WHERE attempt_id=? AND question_id=? AND (error_type IS NULL OR error_type='')`,
+        [errorType, row.attempt_id, row.question_id]
+      );
+      await ensureWrongQuestion(connection, id, {
+        question,
+        selectedAnswer: row.selected_answer,
+        correctAnswer: row.correct_answer
+      }, attribution);
+      const [[occurrences]] = await connection.query(
+        `SELECT COUNT(*) count FROM quiz_attempt_answers aa
+         JOIN quiz_attempts a ON a.id=aa.attempt_id JOIN question_bank qb ON qb.question_id=aa.question_id
+         WHERE a.student_id=? AND aa.is_correct=0 AND aa.error_type=? AND qb.subject=? AND qb.knowledge_point=?`,
+        [id, errorType, row.subject, row.knowledge_point]
+      );
+      await ensureErrorPattern(connection, id, question, { ...attribution, errorType },
+        Math.max(1, Number(occurrences.count || 0)), row.submitted_at);
+    }
+    await connection.commit();
+    return { attemptFound: rows.length > 0, reconciledWrongAnswers: rows.length };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+async function ensureWrongQuestion(connection, studentId, item, attribution) {
+  await connection.query(
+    `INSERT IGNORE INTO wrong_questions
+       (student_id,question_id,subject,knowledge_point,difficulty,question_text,selected_answer,
+        correct_answer,analysis,error_reason,feedback_suggestion,recommended_action,status)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?, '待复习')`,
+    [studentId, item.question.question_id, item.question.subject, item.question.knowledge_point,
+      item.question.difficulty, item.question.stem, item.selectedAnswer, item.correctAnswer,
+      item.question.analysis || "", attribution.evidence, attribution.suggestion, attribution.suggestion]
+  );
+}
+
+async function ensureErrorPattern(connection, studentId, question, attribution, occurrenceCount, occurredAt) {
+  const timestamp = validDate(occurredAt) || new Date();
+  const evidence = JSON.stringify({
+    evidence: attribution.evidence,
+    suggestion: attribution.suggestion,
+    questionId: question.question_id
+  });
+  await connection.query(
+    `INSERT INTO student_error_patterns
+       (student_id,subject,knowledge_point,error_type,occurrence_count,confidence,latest_evidence_json,first_seen_at,last_seen_at)
+     VALUES (?,?,?,?,?,?,?,?,?)
+     ON DUPLICATE KEY UPDATE
+       occurrence_count=GREATEST(occurrence_count,VALUES(occurrence_count)),
+       confidence=GREATEST(confidence,VALUES(confidence)),
+       latest_evidence_json=IF(last_seen_at<=VALUES(last_seen_at),VALUES(latest_evidence_json),latest_evidence_json),
+       first_seen_at=LEAST(first_seen_at,VALUES(first_seen_at)),
+       last_seen_at=GREATEST(last_seen_at,VALUES(last_seen_at))`,
+    [studentId, question.subject, question.knowledge_point, attribution.errorType, occurrenceCount,
+      attribution.confidence, evidence, timestamp, timestamp]
+  );
+}
+
 function normalizeQuestion(row) {
   return { ...row, tags: parseArray(row.tags), option_error_types: parseObject(row.option_error_types) };
 }
@@ -177,4 +259,4 @@ function normalizeDuration(value) { const number = Number(value); return Number.
 function validDate(value) { const date = value ? new Date(value) : null; return date && !Number.isNaN(date.getTime()) ? date : null; }
 function requestError(message) { const error = new Error(message); error.statusCode = 400; return error; }
 
-module.exports = { submitQuiz, calculateMasteryDelta, clampMastery, DIFFICULTY_WEIGHTS };
+module.exports = { submitQuiz, reconcileQuizAttemptDerivedState, calculateMasteryDelta, clampMastery, DIFFICULTY_WEIGHTS };

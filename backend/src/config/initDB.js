@@ -15,11 +15,12 @@ function assertSafeDatabaseName(name) {
 async function initDB() {
   assertDatabaseConfig();
   const databaseName = getDatabaseName();
+  let serverConnection;
 
   try {
     assertSafeDatabaseName(databaseName);
 
-    const serverConnection = await mysql.createConnection({
+    serverConnection = await mysql.createConnection({
       host: databaseConfig.host,
       port: databaseConfig.port,
       user: databaseConfig.user,
@@ -31,6 +32,7 @@ async function initDB() {
       `CREATE DATABASE IF NOT EXISTS \`${databaseName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
     );
     await serverConnection.end();
+    serverConnection = null;
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS ai_request_logs (
@@ -227,6 +229,7 @@ async function initDB() {
     console.log(`MySQL 连接正常，数据库：${databaseName}，question_bank、open_question_bank 表已就绪`);
     return true;
   } catch (error) {
+    if (serverConnection) await serverConnection.end().catch(() => undefined);
     console.error(
       [
         "MySQL 初始化失败：无法确认题库表是否已创建。",
@@ -356,25 +359,21 @@ async function ensureOpenQuestionBankSchema() {
     updated_at: "TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
   };
 
-  try {
-    const [columns] = await pool.query("SHOW COLUMNS FROM open_question_bank");
-    const existingColumns = new Set(columns.map((column) => column.Field));
+  const [columns] = await pool.query("SHOW COLUMNS FROM open_question_bank");
+  const existingColumns = new Set(columns.map((column) => column.Field));
 
-    for (const [columnName, definition] of Object.entries(requiredColumns)) {
-      if (!existingColumns.has(columnName)) {
-        await pool.query(`ALTER TABLE open_question_bank ADD COLUMN \`${columnName}\` ${definition}`);
-      }
+  for (const [columnName, definition] of Object.entries(requiredColumns)) {
+    if (!existingColumns.has(columnName)) {
+      await pool.query(`ALTER TABLE open_question_bank ADD COLUMN \`${columnName}\` ${definition}`);
     }
-
-    await ensureIndex("open_question_bank", "uq_open_question_bank_question_id", "ALTER TABLE open_question_bank ADD UNIQUE KEY uq_open_question_bank_question_id (question_id)", {
-      uniqueColumn: "question_id"
-    });
-    await ensureIndex("open_question_bank", "idx_open_question_bank_subject", "ALTER TABLE open_question_bank ADD KEY idx_open_question_bank_subject (subject)");
-    await ensureIndex("open_question_bank", "idx_open_question_bank_knowledge_point", "ALTER TABLE open_question_bank ADD KEY idx_open_question_bank_knowledge_point (knowledge_point)");
-    await ensureIndex("open_question_bank", "idx_open_question_bank_difficulty", "ALTER TABLE open_question_bank ADD KEY idx_open_question_bank_difficulty (difficulty)");
-  } catch (error) {
-    console.warn("ensureOpenQuestionBankSchema warning:", error.message);
   }
+
+  await ensureIndex("open_question_bank", "uq_open_question_bank_question_id", "ALTER TABLE open_question_bank ADD UNIQUE KEY uq_open_question_bank_question_id (question_id)", {
+    uniqueColumn: "question_id"
+  });
+  await ensureIndex("open_question_bank", "idx_open_question_bank_subject", "ALTER TABLE open_question_bank ADD KEY idx_open_question_bank_subject (subject)");
+  await ensureIndex("open_question_bank", "idx_open_question_bank_knowledge_point", "ALTER TABLE open_question_bank ADD KEY idx_open_question_bank_knowledge_point (knowledge_point)");
+  await ensureIndex("open_question_bank", "idx_open_question_bank_difficulty", "ALTER TABLE open_question_bank ADD KEY idx_open_question_bank_difficulty (difficulty)");
 }
 
 async function ensureWrongQuestionsSchema() {

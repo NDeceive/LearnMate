@@ -4,10 +4,18 @@
   "private": true,
   "description": "计智引擎 Node/Express/MySQL 后端基础骨架",
   "main": "src/index.js",
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "test": "node --test",
+    "db:init": "node scripts/initDatabase.js",
+    "demo:seed": "node scripts/seedCompetitionDemo.js",
+    "demo:verify": "node scripts/verifyCompetitionDemo.js",
+    "demo:reset": "node scripts/resetCompetitionDemo.js",
+    "demo:adopt-legacy": "node scripts/adoptLegacyDemoAccounts.js",
     "seed:base-questions": "node scripts/seedBaseQuestionBank.js",
     "import:open-questions": "node scripts/importOpenQuestionBank.js",
     "seed:code-exercises": "node scripts/seedCodeExercises.js",

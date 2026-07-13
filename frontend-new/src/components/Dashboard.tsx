@@ -194,9 +194,12 @@ export default function Dashboard({ profile, courses, weakPoints, onNavigateToTa
   }, []);
 
   const startChallenge = () => {
-    // Shuffle and pick 3 random questions
-    const shuffled = [...CHALLENGE_QUESTION_POOL].sort(() => 0.5 - Math.random());
-    setChallengeQuestions(shuffled.slice(0, 3));
+    const utcDay = Math.floor(Date.now() / 86_400_000);
+    const startIndex = utcDay % CHALLENGE_QUESTION_POOL.length;
+    setChallengeQuestions(Array.from(
+      { length: Math.min(3, CHALLENGE_QUESTION_POOL.length) },
+      (_, offset) => CHALLENGE_QUESTION_POOL[(startIndex + offset) % CHALLENGE_QUESTION_POOL.length]
+    ));
     setChallengeStep('answering');
     setCurrentChallengeIndex(0);
     setChallengeAnswers({});

@@ -84,16 +84,18 @@ export interface CodeExplainResult {
   explanation: string;
 }
 
-const DEFAULT_BACKEND_ORIGIN = "http://localhost:5800";
 const AUTH_TOKEN_KEY = "jizhi_auth_token";
 const AUTH_USER_KEY = "jizhi_auth_user";
+export const AUTH_UNAUTHORIZED_EVENT = "learnmate:student-unauthorized";
 
 export interface AuthUser {
   id: number;
-  studentId: number;
-  studentNo: string;
+  studentId?: number;
+  teacherId?: number;
+  studentNo?: string | null;
   username: string;
   displayName: string;
+  role: "STUDENT" | "TEACHER" | "ADMIN";
 }
 
 export interface LoginResult {
@@ -204,11 +206,28 @@ export async function login(identifier: string, password: string): Promise<Login
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ identifier, password })
   }, false);
+  if (result.user.role !== "STUDENT" || !result.user.studentId) {
+    clearAuth();
+    throw new Error("请使用学生账号登录学生端");
+  }
   if (typeof window !== "undefined") {
     window.localStorage.setItem(AUTH_TOKEN_KEY, result.token);
     window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(result.user));
   }
   return result;
+}
+
+export async function getCurrentUser(): Promise<AuthUser> {
+  const result = await apiRequest<{ user: AuthUser }>("/api/auth/me");
+  const user = result.user;
+  if (user.role !== "STUDENT" || !user.studentId) {
+    clearAuth();
+    throw new Error("当前账号无学生端访问权限");
+  }
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+  }
+  return user;
 }
 
 export async function fetchApiData<T>(path: string): Promise<T[]> {
@@ -218,6 +237,7 @@ export async function fetchApiData<T>(path: string): Promise<T[]> {
   for (const url of urls) {
     try {
       const response = await fetch(url, withAuthHeaders({ headers: { Accept: "application/json" } }));
+      handleUnauthorizedResponse(response);
 
       if (!response.ok) {
         throw new Error(`请求失败：${response.status}`);
@@ -316,18 +336,45 @@ export async function getResourceVersions(id:number):Promise<Array<Record<string
 export async function openLearningResource(id:number):Promise<LearningResource>{const r=await apiRequest<{resource:LearningResource}>(`/api/resources/${id}/open`,{method:"POST"});return r.resource;}
 export async function updateLearningResourceProgress(id:number,progressPercent:number):Promise<LearningResource>{const r=await apiRequest<{resource:LearningResource}>(`/api/resources/${id}/progress`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({progressPercent})});return r.resource;}
 export async function completeLearningResource(id:number):Promise<LearningResource>{const r=await apiRequest<{resource:LearningResource}>(`/api/resources/${id}/complete`,{method:"POST"});return r.resource;}
-export async function downloadLearningResource(id:number,version?:number):Promise<void>{const path=`/api/resources/${id}${version?`/versions/${version}`:""}/download`;let last:unknown;for(const url of buildApiCandidates(path)){try{const response=await fetch(url,withAuthHeaders());if(!response.ok)throw new Error((await response.json().catch(()=>({}))).error||`下载失败：${response.status}`);const blob=await response.blob();const disposition=response.headers.get("Content-Disposition")||"";const match=disposition.match(/filename\*=UTF-8''([^;]+)/i);const name=match?decodeURIComponent(match[1]):"LearnMate课件.pptx";const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);return;}catch(e){last=e;}}throw last||new Error("下载失败");}
+export async function downloadLearningResource(id: number, version?: number): Promise<void> {
+  const path = `/api/resources/${id}${version ? `/versions/${version}` : ""}/download`;
+  let last: unknown;
+  for (const url of buildApiCandidates(path)) {
+    try {
+      const response = await fetch(url, withAuthHeaders());
+      handleUnauthorizedResponse(response);
+      if (!response.ok) {
+        throw new Error((await response.json().catch(() => ({}))).error || `下载失败：${response.status}`);
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+      const name = match ? decodeURIComponent(match[1]) : "LearnMate课件.pptx";
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = name;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      return;
+    } catch (error) {
+      last = error;
+    }
+  }
+  throw last || new Error("下载失败");
+}
 
 function buildApiCandidates(path: string) {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  const configuredOrigin = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "");
-  const candidates = [
-    normalizedPath,
-    configuredOrigin ? `${configuredOrigin}${normalizedPath}` : "",
-    `${DEFAULT_BACKEND_ORIGIN}${normalizedPath}`
-  ].filter(Boolean);
+  const configuredBase = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
-  return Array.from(new Set(candidates));
+  if (!configuredBase) return [normalizedPath];
+  if (configuredBase.endsWith("/api") && (normalizedPath === "/api" || normalizedPath.startsWith("/api/"))) {
+    return [`${configuredBase}${normalizedPath.slice(4)}`];
+  }
+  return [`${configuredBase}${normalizedPath}`];
 }
 
 export async function apiRequest<T>(path: string, init?: RequestInit, authenticated = true): Promise<T> {
@@ -338,6 +385,7 @@ export async function apiRequest<T>(path: string, init?: RequestInit, authentica
     try {
       const requestInit = authenticated ? withAuthHeaders(init) : init;
       const response = await fetch(url, requestInit ?? { headers: { Accept: "application/json" } });
+      if (authenticated) handleUnauthorizedResponse(response);
 
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
@@ -364,6 +412,12 @@ function withAuthHeaders(init?: RequestInit): RequestInit {
   const token = getAuthToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
   return { ...(init || {}), headers };
+}
+
+function handleUnauthorizedResponse(response: Response) {
+  if (response.status !== 401 || typeof window === "undefined") return;
+  clearAuth();
+  window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
 }
 
 function isAgentTaskDescriptions(value: unknown): value is AgentTaskDescriptions {

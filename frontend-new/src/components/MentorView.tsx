@@ -1,10 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion } from "motion/react";
-import { AgentTaskDescriptions, ChatSession, ChatMessage, MessagePart } from "../types";
-import { initialSessions } from "../mockData";
+import type { ChatSession, ChatMessage } from "../types";
 import { apiRequest } from "../api";
 import CitationPanel from "./knowledge/CitationPanel";
-import { getAgentTaskDescriptions } from "../api";
 import {
   Send,
   Plus,
@@ -15,7 +13,6 @@ import {
   Code,
   AlertTriangle,
   ArrowRight,
-  Terminal,
   Paperclip,
   Check,
   Copy,
@@ -29,39 +26,31 @@ interface MentorViewProps {
   onClearPrefill: () => void;
 }
 
-const LOADING_TASK_DESCRIPTIONS: AgentTaskDescriptions = {
-  coordinator: "正在分析当前问题……",
-  theoryAgent: "正在分析当前问题……",
-  codeAgent: "正在分析当前问题……",
-  reviewAgent: "正在分析当前问题……"
-};
-
-const FALLBACK_TASK_DESCRIPTIONS: AgentTaskDescriptions = {
-  coordinator: "正在分析问题目标与处理流程……",
-  theoryAgent: "正在梳理相关理论与解题依据……",
-  codeAgent: "正在设计适合当前问题的实现方案……",
-  reviewAgent: "正在检查答案正确性与边界条件……"
+const INITIAL_SESSION: ChatSession = {
+  id: "new-session",
+  title: "新对话",
+  knowledgePoints: [],
+  recommendedResources: [],
+  suggestedFollowups: [],
+  messages: []
 };
 
 export default function MentorView({ initialPrompt, onClearPrefill }: MentorViewProps) {
-  const [sessions, setSessions] = useState<ChatSession[]>(initialSessions);
-  const [activeSessionId, setActiveSessionId] = useState<string>("session-1");
+  const [sessions, setSessions] = useState<ChatSession[]>([INITIAL_SESSION]);
+  const [activeSessionId, setActiveSessionId] = useState<string>(INITIAL_SESSION.id);
   const [inputText, setInputText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  // For multi-agent live synergy visualization
-  const [synergyStep, setSynergyStep] = useState<number>(0);
-  const [taskDescriptions, setTaskDescriptions] = useState<AgentTaskDescriptions>(LOADING_TASK_DESCRIPTIONS);
+  const [requestError, setRequestError] = useState("");
+  const [lastFailedPrompt, setLastFailedPrompt] = useState("");
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const taskDescriptionRequestIdRef = useRef(0);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [activeSession?.messages, isSubmitting, synergyStep]);
+  }, [activeSession?.messages, isSubmitting, requestError]);
 
   // Handle deep-linked prefilled prompts!
   useEffect(() => {
@@ -79,17 +68,11 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
 
   const handleCreateSession = () => {
     const newSession: ChatSession = {
-      id: "session-" + Math.random().toString(36).substr(2, 9),
-      title: "全新学术问答会话",
-      knowledgePoints: ["二叉树", "操作系统", "算法分析"],
-      recommendedResources: [
-        { title: "《算法导论》第1章", type: "书籍章节" },
-        { title: "LeetCode 基础特训", type: "在线自测" }
-      ],
-      suggestedFollowups: [
-        "红黑树是如何进行左右旋转的？",
-        "多线程同步中 mutex 和 semaphore 的本质区别是什么？"
-      ],
+      id: `session-${crypto.randomUUID()}`,
+      title: "新对话",
+      knowledgePoints: [],
+      recommendedResources: [],
+      suggestedFollowups: [],
       messages: []
     };
     setSessions((prev) => [newSession, ...prev]);
@@ -124,27 +107,8 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
 
     setInputText("");
     setIsSubmitting(true);
-
-    const taskDescriptionRequestId = ++taskDescriptionRequestIdRef.current;
-    setTaskDescriptions(LOADING_TASK_DESCRIPTIONS);
-    const taskDescriptionPromise = getAgentTaskDescriptions(textToSend)
-      .then((descriptions) => {
-        if (taskDescriptionRequestIdRef.current === taskDescriptionRequestId) {
-          setTaskDescriptions(descriptions);
-        }
-      })
-      .catch((error) => {
-        console.error("Failed to generate agent task descriptions", error);
-        if (taskDescriptionRequestIdRef.current === taskDescriptionRequestId) {
-          setTaskDescriptions(FALLBACK_TASK_DESCRIPTIONS);
-        }
-      });
-
-    // Multi-Agent Collaboration Panel Animation
-    setSynergyStep(1); // Coordinator starts
-    const timer1 = setTimeout(() => setSynergyStep(2), 1200); // TheoryAgent working
-    const timer2 = setTimeout(() => setSynergyStep(3), 2800); // CodeAgent working
-    const timer3 = setTimeout(() => setSynergyStep(4), 4200); // ReviewAgent working
+    setRequestError("");
+    setLastFailedPrompt("");
 
     try {
       const data = await apiRequest<{ parts: ChatMessage["parts"] }>("/api/chat", {
@@ -175,19 +139,10 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
       );
 
     } catch (err) {
-      console.error("Failed to query API, fallback will trigger", err);
+      setRequestError(err instanceof Error ? err.message : "问答服务请求失败");
+      setLastFailedPrompt(textToSend);
     } finally {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      clearTimeout(timer3);
       setIsSubmitting(false);
-      void taskDescriptionPromise.finally(() => {
-        setTimeout(() => {
-          if (taskDescriptionRequestIdRef.current === taskDescriptionRequestId) {
-            setSynergyStep(0);
-          }
-        }, 800);
-      });
     }
   };
 
@@ -230,7 +185,7 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
 
         <div className="border-t border-slate-100 pt-3 text-[10px] text-slate-400 font-mono flex items-center gap-1 justify-center">
           <Cpu className="w-3.5 h-3.5 text-blue-500" />
-          <span>JiZhi LLM Node: G-3.5</span>
+          <span>知识库问答会话</span>
         </div>
       </div>
 
@@ -240,12 +195,12 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
         <div className="px-5 py-3.5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <div className="space-y-0.5">
             <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-              <Workflow className="w-4 h-4 text-blue-600 animate-pulse" /> 计智引擎 (综合协调者)
+              <Workflow className="w-4 h-4 text-blue-600" /> 计智引擎知识问答
             </h3>
-            <p className="text-[10px] text-slate-400 leading-none">系统已挂载 TheoryAgent, CodeAgent, ReviewAgent 实时研讨</p>
+            <p className="text-[10px] text-slate-400 leading-none">回答以服务端返回内容和知识库引用为准</p>
           </div>
-          <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-bold flex items-center gap-0.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 协同解题就绪
+          <span className="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-bold">
+            引用可核验
           </span>
         </div>
 
@@ -257,7 +212,7 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
               <div>
                 <h4 className="text-xs font-bold text-slate-700">没有对话消息</h4>
                 <p className="text-[11px] text-slate-400 mt-1 max-w-xs leading-relaxed">
-                  请输入关于数据结构、算法时空分析、操作系统死锁或计组原理的问题。多维智能体将协作给予解答。
+                  输入问题后，系统会请求后端知识库问答服务；没有服务端结果时不会生成替代答案。
                 </p>
               </div>
             </div>
@@ -349,42 +304,17 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
             ))
           )}
 
-          {/* SYNERGY LOGS CARDS ON SUBMISSION */}
-          {synergyStep > 0 && (
-            <div className="bg-slate-900 text-slate-300 p-4 rounded-xl border border-slate-800 space-y-3 font-mono text-xs fade-in">
-              <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                <span className="text-white font-bold flex items-center gap-1.5">
-                  <Workflow className="w-4 h-4 text-blue-400 animate-spin" /> Cognitive Synergy Meeting
-                </span>
-                <span className="text-[10px] text-slate-500">Live Workspace</span>
-              </div>
-
-              <div className="space-y-1.5 text-[11px]">
-                <div className="flex items-center justify-between">
-                  <span className="min-w-0 pr-3">&gt; 综合协调者 (Coordinator) {taskDescriptions.coordinator}</span>
-                  <span className={`shrink-0 ${synergyStep >= 1 ? "text-emerald-400" : "text-slate-600"}`}>
-                    {synergyStep >= 1 ? "✓ COMPLETE" : "● PENDING"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="min-w-0 pr-3">&gt; 学术理论智能体 (TheoryAgent) {taskDescriptions.theoryAgent}</span>
-                  <span className={`shrink-0 ${synergyStep >= 2 ? "text-emerald-400" : "text-slate-600"}`}>
-                    {synergyStep === 1 ? "★ RUNNING" : synergyStep >= 2 ? "✓ COMPLETE" : "● PENDING"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="min-w-0 pr-3">&gt; 代码工程智能体 (CodeAgent) {taskDescriptions.codeAgent}</span>
-                  <span className={`shrink-0 ${synergyStep >= 3 ? "text-emerald-400" : "text-slate-600"}`}>
-                    {synergyStep === 2 ? "★ RUNNING" : synergyStep >= 3 ? "✓ COMPLETE" : "● PENDING"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="min-w-0 pr-3">&gt; 评估审查智能体 (ReviewAgent) {taskDescriptions.reviewAgent}</span>
-                  <span className={`shrink-0 ${synergyStep >= 4 ? "text-emerald-400" : "text-slate-600"}`}>
-                    {synergyStep === 3 ? "★ RUNNING" : synergyStep >= 4 ? "✓ COMPLETE" : "● PENDING"}
-                  </span>
-                </div>
-              </div>
+          {isSubmitting && (
+            <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800" role="status">
+              正在等待问答服务返回结果…
+            </div>
+          )}
+          {requestError && (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800" role="alert">
+              <span>请求失败：{requestError}</span>
+              <button className="shrink-0 rounded-lg border border-rose-300 px-3 py-1 font-bold" onClick={() => handleSubmitMessage(lastFailedPrompt)}>
+                重试
+              </button>
             </div>
           )}
 
@@ -447,6 +377,7 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
             <Hash className="w-3.5 h-3.5 text-blue-600" /> 关联知识标签
           </h4>
           <div className="flex flex-wrap gap-1.5">
+            {activeSession.knowledgePoints.length === 0 && <p className="text-[11px] text-slate-400">暂无服务端知识标签</p>}
             {activeSession.knowledgePoints.map((kp, i) => (
               <button
                 key={i}
@@ -465,6 +396,7 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
             <BookOpen className="w-3.5 h-3.5 text-blue-600" /> 推荐教辅资料
           </h4>
           <div className="space-y-2.5">
+            {activeSession.recommendedResources.length === 0 && <p className="text-[11px] text-slate-400">暂无服务端推荐资料</p>}
             {activeSession.recommendedResources.map((res, i) => (
               <div key={i} className="text-xs p-2.5 bg-slate-50 border border-slate-100 rounded-lg space-y-1">
                 <div className="flex justify-between items-center">
@@ -482,6 +414,7 @@ export default function MentorView({ initialPrompt, onClearPrefill }: MentorView
             <Sparkles className="w-3.5 h-3.5 text-amber-500" /> 智能追问问题
           </h4>
           <div className="space-y-2">
+            {activeSession.suggestedFollowups.length === 0 && <p className="text-[11px] text-slate-400">暂无服务端追问建议</p>}
             {activeSession.suggestedFollowups.map((fl, i) => (
               <button
                 key={i}

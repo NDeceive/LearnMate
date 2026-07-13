@@ -2,8 +2,10 @@ const fs = require("fs/promises");
 const path = require("path");
 const crypto = require("crypto");
 
-const STORAGE_ROOT = path.resolve(__dirname, "../../storage/resources");
-const TEMP_ROOT = path.resolve(__dirname, "../../storage/temp");
+const STORAGE_ROOT = resolveStorageRoot("RESOURCE_STORAGE_DIR", "../../storage/resources");
+// Keep temporary files on the same filesystem as the final file so rename remains atomic
+// when RESOURCE_STORAGE_DIR is a Docker volume.
+const TEMP_ROOT = path.join(STORAGE_ROOT, ".tmp");
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
 function safeInteger(value, name) {
@@ -26,15 +28,17 @@ async function finalizeFile(tempPath, { studentId, resourceId, version, fileType
   const directory = path.join(STORAGE_ROOT, String(ids[0]), String(ids[1]), `v${ids[2]}`);
   await fs.mkdir(directory, { recursive: true });
   const finalPath = path.join(directory, safeFileName(fileType));
-  const stats = await fs.stat(tempPath);
-  if (stats.size <= 0 || stats.size > MAX_FILE_SIZE) throw new Error("generated file size is invalid");
+  const stat = await fs.stat(tempPath);
+  if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_FILE_SIZE) throw new Error("generated file size is invalid");
+  const bytes = await fs.readFile(tempPath);
+  if (bytes.length !== stat.size || bytes.length > MAX_FILE_SIZE) throw new Error("generated file size changed while finalizing");
+  const checksum = crypto.createHash("sha256").update(bytes).digest("hex");
   await fs.rename(tempPath, finalPath);
-  const bytes = await fs.readFile(finalPath);
   return {
     absolutePath: finalPath,
     storagePath: path.relative(STORAGE_ROOT, finalPath).split(path.sep).join("/"),
     fileSize: bytes.length,
-    checksum: crypto.createHash("sha256").update(bytes).digest("hex")
+    checksum
   };
 }
 function resolveStoredFile(storagePath) {
@@ -45,4 +49,8 @@ function resolveStoredFile(storagePath) {
   return resolved;
 }
 async function cleanupFile(filePath) { if (filePath) await fs.rm(filePath, { force: true }).catch(() => undefined); }
+function resolveStorageRoot(variableName, fallback) {
+  const configured = String(process.env[variableName] || "").trim();
+  return configured ? path.resolve(configured) : path.resolve(__dirname, fallback);
+}
 module.exports = { prepareTempFile, finalizeFile, resolveStoredFile, cleanupFile, STORAGE_ROOT, TEMP_ROOT, MAX_FILE_SIZE };

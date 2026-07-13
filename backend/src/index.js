@@ -4,21 +4,42 @@ const dotenv = require("dotenv");
 dotenv.config({ path: path.resolve(process.cwd(), ".env"), quiet: true });
 
 const app = require("./app");
-const { initDB } = require("./config/initDB");
-
-const PORT = Number(process.env.PORT || 5800);
+const { validateRuntimeConfig } = require("./config/runtimeConfig");
+const { prepareApplication, installShutdownHandlers } = require("./services/startupService");
 
 async function startServer() {
-  await initDB();
+  const config = validateRuntimeConfig();
+  await prepareApplication(config);
+  const host = String(process.env.HOST || "0.0.0.0");
 
-  const server = app.listen(PORT, () => {
-    console.log(`计智引擎后端已启动：http://localhost:${PORT}`);
+  const server = app.listen(config.port, host, () => {
+    console.log(JSON.stringify({
+      level: "info",
+      event: "server_started",
+      host,
+      port: config.port,
+      environment: config.nodeEnv
+    }));
   });
 
   server.on("error", (error) => {
-    console.error("后端服务启动失败：", error.message);
+    console.error(JSON.stringify({ level: "error", event: "server_error", message: String(error.message).slice(0, 160) }));
+    process.exitCode = 1;
+  });
+  installShutdownHandlers(server);
+  return server;
+}
+
+if (require.main === module) {
+  startServer().catch((error) => {
+    console.error(JSON.stringify({
+      level: "error",
+      event: "startup_failed",
+      code: String(error.code || "STARTUP_FAILED"),
+      message: String(error.message).slice(0, 200)
+    }));
     process.exit(1);
   });
 }
 
-startServer();
+module.exports = { startServer };
