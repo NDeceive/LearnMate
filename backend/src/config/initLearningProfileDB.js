@@ -8,6 +8,7 @@ async function initLearningProfileDB(pool) {
       username VARCHAR(100) NOT NULL,
       display_name VARCHAR(100) NOT NULL,
       password_hash VARCHAR(255) NOT NULL,
+      role VARCHAR(20) NOT NULL DEFAULT 'STUDENT',
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
@@ -175,6 +176,7 @@ async function ensureLegacyUsersCompatibility(pool) {
   await ensureColumn(pool, "users", "student_no", "VARCHAR(64) NULL");
   await ensureColumn(pool, "users", "display_name", "VARCHAR(100) NULL");
   await ensureColumn(pool, "users", "password_hash", "VARCHAR(255) NULL");
+  await ensureColumn(pool, "users", "role", "VARCHAR(20) NOT NULL DEFAULT 'STUDENT'");
   const [legacyPassword] = await pool.query("SHOW COLUMNS FROM users LIKE 'password'");
   if (legacyPassword.length) await pool.query("ALTER TABLE users MODIFY COLUMN password VARCHAR(255) NULL");
   const [legacyRealName] = await pool.query("SHOW COLUMNS FROM users LIKE 'real_name'");

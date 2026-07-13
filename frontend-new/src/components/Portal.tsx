@@ -7,8 +7,8 @@ interface PortalProps {
 }
 
 export default function Portal({ onLogin }: PortalProps) {
-  const [username, setUsername] = useState("zhangsan");
-  const [password, setPassword] = useState("123456");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 

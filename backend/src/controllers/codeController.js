@@ -188,14 +188,14 @@ function buildExplainFallback(context = {}) {
 
   if (hasError) {
     return [
-      "本次代码实验室使用的是 mock runner，没有真实编译或执行用户代码。",
+      "本次代码实验室使用的是演示运行器，没有真实编译或执行用户代码。",
       `系统检测到模拟错误信息：${ensureText(context.stderr || context.compileOutput)}`,
       "建议先确认是否包含 main 函数、头文件是否完整，以及核心数据结构函数是否已经补全。"
     ].join("\n");
   }
 
   return [
-    "本次代码实验室使用的是 mock runner，没有真实编译或执行用户代码。",
+    "本次代码实验室使用的是演示运行器，没有真实编译或执行用户代码。",
     `当前模拟标准输出为：${output}`,
     "如果输出与样例一致，说明你可以继续关注顺序表、链表、栈、队列或树遍历等核心逻辑的补全。"
   ].join("\n");

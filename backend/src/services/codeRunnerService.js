@@ -8,7 +8,7 @@ async function runCode({ language, sourceCode, stdin, exerciseId } = {}) {
   }
 
   if (!hasMainFunction(normalizedSource)) {
-    return buildErrorResult("mock-compile: 未找到 main 函数，请补充 int main() 作为程序入口。");
+    return buildErrorResult("演示检查：未找到 main 函数，请补充 int main() 作为程序入口。");
   }
 
   if (/printf\s*\(\s*"hello"\s*\)/i.test(normalizedSource)) {
@@ -18,7 +18,7 @@ async function runCode({ language, sourceCode, stdin, exerciseId } = {}) {
   const exercise = exerciseId ? await getExerciseById(exerciseId) : null;
   const sampleOutput = ensureText(exercise && exercise.sample_output);
 
-  return buildSuccessResult(sampleOutput || "mock runner: 程序已模拟运行完成。");
+  return buildSuccessResult(sampleOutput || "演示运行器：已生成样例结果，未真实执行代码。");
 }
 
 function hasMainFunction(sourceCode) {
@@ -31,8 +31,8 @@ function buildSuccessResult(stdout) {
     stdout,
     stderr: "",
     compileOutput: "",
-    time: "0.01s",
-    memory: "mock"
+    time: "",
+    memory: ""
   };
 }
 
@@ -42,8 +42,8 @@ function buildErrorResult(message) {
     stdout: "",
     stderr: message,
     compileOutput: message,
-    time: "0.00s",
-    memory: "mock"
+    time: "",
+    memory: ""
   };
 }
 

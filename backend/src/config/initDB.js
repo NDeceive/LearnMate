@@ -4,6 +4,7 @@ const { initLearningProfileDB } = require("./initLearningProfileDB");
 const { initLearningPathDB } = require("./initLearningPathDB");
 const { initLearningResourceDB } = require("./initLearningResourceDB");
 const { initKnowledgeBaseDB } = require("./initKnowledgeBaseDB");
+const { initTeacherAnalyticsDB } = require("./initTeacherAnalyticsDB");
 
 function assertSafeDatabaseName(name) {
   if (!/^[A-Za-z0-9_$]+$/.test(name)) {
@@ -221,6 +222,7 @@ async function initDB() {
     await initLearningPathDB(pool);
     await initLearningResourceDB(pool);
     await initKnowledgeBaseDB(pool);
+    await initTeacherAnalyticsDB(pool);
 
     console.log(`MySQL 连接正常，数据库：${databaseName}，question_bank、open_question_bank 表已就绪`);
     return true;

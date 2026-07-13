@@ -13,7 +13,7 @@ async function authenticate(identifier, password) {
   }
 
   const [rows] = await pool.query(
-    `SELECT id, student_no, username, display_name, password_hash
+    `SELECT id, student_no, username, display_name, password_hash, COALESCE(role, 'STUDENT') AS role
        FROM users
       WHERE student_no = ? OR username = ?
       LIMIT 1`,
@@ -35,8 +35,14 @@ async function authenticate(identifier, password) {
     throw error;
   }
 
+  const role = String(user.role || "STUDENT").toUpperCase();
+  const identityClaims = role === "STUDENT"
+    ? { studentId: Number(user.id) }
+    : role === "TEACHER"
+      ? { teacherId: Number(user.id) }
+      : {};
   const token = jwt.sign(
-    { username: user.username, studentNo: user.student_no },
+    { userId: Number(user.id), username: user.username, studentNo: user.student_no, role, ...identityClaims },
     secret,
     { subject: String(user.id), expiresIn: process.env.JWT_EXPIRES_IN || "8h" }
   );
@@ -45,10 +51,12 @@ async function authenticate(identifier, password) {
     token,
     user: {
       id: user.id,
-      studentId: user.id,
+      ...(role === "STUDENT" ? { studentId: user.id } : {}),
+      ...(role === "TEACHER" ? { teacherId: user.id } : {}),
       studentNo: user.student_no,
       username: user.username,
-      displayName: user.display_name
+      displayName: user.display_name,
+      role
     }
   };
 }

@@ -222,7 +222,7 @@ export default function CodeLabWorkspace({ exerciseId, onBackToList }: CodeLabWo
                   语言：C
                 </span>
                 <span className="bg-blue-50 border border-blue-100 text-blue-700 px-3 py-2 rounded-xl">
-                  后端 mock runner
+                  后端演示运行器（非真实沙箱）
                 </span>
               </div>
 
@@ -329,7 +329,7 @@ function RunResultPanel({ result }: { result: CodeRunResult | null }) {
     >
       {!result ? (
         <p className="text-xs font-semibold text-slate-500 leading-relaxed">
-          运行结果将在这里显示。当前版本不会真实执行用户代码，后端返回 mock runner 的样例运行结果。
+          运行结果将在这里显示。当前版本不会真实执行用户代码，后端演示运行器仅返回样例结果。
         </p>
       ) : (
         <>

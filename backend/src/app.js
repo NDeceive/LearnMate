@@ -13,6 +13,7 @@ const codeRoutes = require("./routes/code");
 const authRoutes = require("./routes/auth");
 const learningPathRoutes = require("./routes/learningPath");
 const knowledgeRoutes = require("./routes/knowledge");
+const teacherRoutes = require("./routes/teacher");
 
 const app = express();
 
@@ -29,6 +30,7 @@ app.use("/api", wrongQuestionRoutes);
 app.use("/api", profileRoutes);
 app.use("/api", learningPathRoutes);
 app.use("/api", knowledgeRoutes);
+app.use("/api", teacherRoutes);
 app.use("/api/agent-logs", agentLogRoutes);
 app.use("/api/code", codeRoutes);
 
